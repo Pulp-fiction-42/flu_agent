@@ -1,0 +1,52 @@
+# BioAgent Conda 环境配置
+# 参考 POPGENAGENT 的 environment.yml
+# 使用方法: conda env create -f environment.yml
+
+name: bioagent
+
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+
+dependencies:
+  # Python
+  - python>=3.9
+  - pip
+  
+  # 生信工具（可选，根据需要安装）
+  - seqkit
+  - fastp
+  - fastqc
+  - multiqc
+  - cutadapt
+  - spades
+  - megahit
+  - bwa
+  - minimap2
+  - samtools
+  - blast
+  - diamond
+  - kraken2
+  - mafft
+  - trimal
+  - iqtree
+  
+  # 可选：其他生信工具
+  # - ete3
+  # - phylo
+  
+  # 可选：可视化
+  # - matplotlib
+  # - plotly
+  
+  # pip 包
+  - pip:
+    - requests>=2.28.0
+    - pyyaml>=6.0
+    - gradio>=3.0.0
+
+# 环境变量
+variables:
+  OLLAMA_BASE_URL: "http://localhost:11434"
+  OLLAMA_MODEL: "qwen3:4b"

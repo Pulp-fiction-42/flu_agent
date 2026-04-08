@@ -1,0 +1,4971 @@
+Directory structure:
+└── stanford-cs149-asst1/
+    ├── README.md
+    ├── README_aarch64.md
+    ├── common/
+    │   ├── CycleTimer.h
+    │   ├── ppm.cpp
+    │   └── tasksys.cpp
+    ├── prog1_mandelbrot_threads/
+    │   ├── main.cpp
+    │   ├── Makefile
+    │   ├── mandelbrotSerial.cpp
+    │   └── mandelbrotThread.cpp
+    ├── prog2_vecintrin/
+    │   ├── CS149intrin.cpp
+    │   ├── CS149intrin.h
+    │   ├── logger.cpp
+    │   ├── logger.h
+    │   ├── main.cpp
+    │   └── Makefile
+    ├── prog3_mandelbrot_ispc/
+    │   ├── main.cpp
+    │   ├── Makefile
+    │   ├── mandelbrot.ispc
+    │   └── mandelbrotSerial.cpp
+    ├── prog4_sqrt/
+    │   ├── main.cpp
+    │   ├── Makefile
+    │   ├── sqrt.ispc
+    │   └── sqrtSerial.cpp
+    ├── prog5_saxpy/
+    │   ├── main.cpp
+    │   ├── Makefile
+    │   ├── saxpy.ispc
+    │   └── saxpySerial.cpp
+    └── prog6_kmeans/
+        ├── kmeansThread.cpp
+        ├── main.cpp
+        ├── Makefile
+        ├── plot.py
+        ├── requirements.txt
+        └── utils.cpp
+
+================================================
+FILE: README.md
+================================================
+# Assignment 1: Performance Analysis on a Quad-Core CPU #
+
+**Due Mon Oct 6, 11:59pm**
+
+**100 points total + 6 points extra credit**
+
+## Overview ##
+
+This assignment is intended to help you develop an understanding of the two primary forms of parallel execution present in a modern multi-core CPU:
+
+1. SIMD execution within a single processing core
+2. Parallel execution using multiple cores (You'll see effects of Intel Hyper-threading as well.)
+
+You will also gain experience measuring and reasoning about the
+performance of parallel programs (a challenging, but important, skill you will
+use throughout this class). This assignment involves only a small amount of
+programming, but a lot of analysis!
+
+## Environment Setup ##
+
+__You will need to run code on the new myth machines for this assignment__
+(Hostnames for these machines are `myth[51-66].stanford.edu`). If for some reason you do not have a home directory on the myth machines, submit a HelpSU ticket [here](https://stanford.service-now.com/it_services?id=sc_cat_item&sys_id=cab169801bd918d0685d4377cc4bcbe0).
+
+These machines contain four-core 4.2 GHz Intel Core i7 processors (although dynamic frequency scaling can take them to 4.5 GHz when the chip decides it is useful and possible to do so). Each core in the processor supports __two hardware threads__ (Intel calls this "Hyper-Threading") and the cores can execute AVX2 vector instructions which describe
+simultaneous execution of the same __eight-wide SIMD operation__ on a vector of eight single-precision 
+values. For the curious, a complete specification for this CPU can be found at 
+<https://www.intel.com/content/www/us/en/products/sku/97129/intel-core-i77700k-processor-8m-cache-up-to-4-50-ghz/specifications.html>. Students that want to dig deeper might enjoy [this writeup](https://en.wikichip.org/wiki/intel/microarchitectures/kaby_lake).
+
+Note: For grading purposes, we expect you to report on the performance of code run on the Stanford myth machines, however
+for kicks, you may also want to run the programs in this assignment on your own machine. (You will first need to install the Intel SPMD Program Compiler (ISPC) available here: <http://ispc.github.io/>). Feel free to include your findings from running code on other machines in your report as well, just be very clear what machine you were running on. 
+
+To get started:
+
+1. ISPC is needed to compile many of the programs used in this assignment. ISPC can be easily installed on the myth machines through the following steps:  
+
+From a myth machine, download the linux binary into a local directory of your choice.  You can get ISPC compiler binaries for Linux from the ISPC [downloads page](https://ispc.github.io/downloads.html).  From `myth`, we recommend you use `wget` to directly download the binary from the downloads page. As of Fall 2025 Week 1, the `wget` line below works:
+
+    wget https://github.com/ispc/ispc/releases/download/v1.28.1/ispc-v1.28.1-linux.tar.gz
+
+Untar the downloaded file: `tar -xvf ispc-v1.28.1-linux.tar.gz`
+
+Add the ISPC `bin` directory to your system path.  For example, if untarring the downloaded file produces the directory `~/Downloads/ispc-v1.28.1-linux`, in bash you'd update your path variable with:
+
+    export PATH=$PATH:${HOME}/Downloads/ispc-v1.28.1-linux/bin
+
+The above line can be added to your `.bashrc` file for permanence.
+
+If you are using csh, you'll update your `PATH` using `setenv`.  A quick Google search will teach you how. 
+
+2. The assignment starter code is available on <https://github.com/stanford-cs149/asst1>. Please clone the Assignment 1 starter code using:
+
+    `git clone https://github.com/stanford-cs149/asst1.git`
+
+## Program 1: Parallel Fractal Generation Using Threads (20 points) ##
+
+Build and run the code in the `prog1_mandelbrot_threads/` directory of
+the code base. (Type `make` to build, and `./mandelbrot` to run it.)
+This program produces the image file `mandelbrot-serial.ppm`, which is a visualization of a famous set of
+complex numbers called the Mandelbrot set. Most platforms have a .ppm
+view. To view the resulting images remotely, first make sure that you have _X server_. No downloads are needed
+for Linux systems. However, for Mac you can use [Xquartz](https://www.xquartz.org/) and 
+for Windows you can use [VcXsrv](https://sourceforge.net/projects/vcxsrv/).
+After you have SSH X-Forwarding support, make sure you `ssh -Y` onto a myth machine and
+you can then view the images using the `display` command. As you can see in the images below, the
+result is a familiar and beautiful fractal.  Each pixel in the image
+corresponds to a value in the complex plane, and the brightness of
+each pixel is proportional to the computational cost of determining
+whether the value is contained in the Mandelbrot set. To get image 2,
+use the command option `--view 2`.  (See function `mandelbrotSerial()`
+defined in `mandelbrotSerial.cpp`). You can learn more about the
+definition of the Mandelbrot set at
+<http://en.wikipedia.org/wiki/Mandelbrot_set>.
+
+
+![Mandelbrot Set](handout-images/mandelbrot_viz.jpg "A visualization of two views of the Mandelbrot set. The cost of computing each pixel is proportional to its brightness. When running programs 1 and 3, you can use the command line option `--view 2` to set output to be view 2.")
+
+Your job is to parallelize the computation of the images using 
+[std::thread](https://en.cppreference.com/w/cpp/thread/thread). Starter
+code that spawns one additional thread is provided in the function
+`mandelbrotThread()` located in `mandelbrotThread.cpp`. In this function, the
+main application thread creates another additional thread using the constructor
+`std::thread(function, args...)` It waits for this thread to complete by calling
+`join` on the thread object.
+Currently the launched thread does not do any computation and returns immediately.
+You should add code to `workerThreadStart` function to accomplish this task.
+You will not need to make use of any other std::thread API calls in this assignment.
+
+**What you need to do:**
+
+1.  Modify the starter code to parallelize the Mandelbrot generation using 
+ two processors. Specifically, compute the top half of the image in
+  thread 0, and the bottom half of the image in thread 1. This type
+    of problem decomposition is referred to as _spatial decomposition_ since
+  different spatial regions of the image are computed by different processors.
+2.  Extend your code to use 2, 3, 4, 5, 6, 7, and 8 threads, partitioning the image
+  generation work accordingly (threads should get blocks of the image). Note that the processor only has four cores but each
+  core supports two hyper-threads, so it can execute a total of eight threads interleaved on its execution contents.
+  In your write-up, produce a graph of __speedup compared to the reference sequential implementation__ as a function of the number of threads used __FOR VIEW 1__. Is speedup linear in the number of threads used? In your writeup hypothesize why this is (or is not) the case? (you may also wish to produce a graph for VIEW 2 to help you come up with a good answer. Hint: take a careful look at the three-thread datapoint.)
+3.  To confirm (or disprove) your hypothesis, measure the amount of time
+  each thread requires to complete its work by inserting timing code at
+  the beginning and end of `workerThreadStart()`. How do your measurements
+  explain the speedup graph you previously created?
+4.  Modify the mapping of work to threads to achieve to improve speedup to
+  at __about 7-8x on both views__ of the Mandelbrot set (if you're above 7x that's fine, don't sweat it). You may not use any
+  synchronization between threads in your solution. We are expecting you to come up with a single work decomposition policy that will work well for all thread counts---hard coding a solution specific to each configuration is not allowed! (Hint: There is a very simple static
+  assignment that will achieve this goal, and no communication/synchronization
+  among threads is necessary.). In your writeup, describe your approach to parallelization
+  and report the final 8-thread speedup obtained. 
+5. Now run your improved code with 16 threads. Is performance noticably greater than when running with eight threads? Why or why not? 
+  
+## Program 2: Vectorizing Code Using SIMD Intrinsics (20 points) ##
+
+Take a look at the function `clampedExpSerial` in `prog2_vecintrin/main.cpp` of the
+Assignment 1 code base.  The `clampedExp()` function raises `values[i]` to the power given by `exponents[i]` for all elements of the input array and clamps the resulting values at 9.999999.  In program 2, your job is to vectorize this piece of code so it can be run on a machine with SIMD vector instructions.
+
+However, rather than craft an implementation using SSE or AVX2 vector intrinsics that map to real SIMD vector instructions on modern CPUs, to make things a little easier, we're asking you to implement your version using CS149's "fake vector intrinsics" defined in `CS149intrin.h`.   The `CS149intrin.h` library provides you with a set of vector instructions that operate
+on vector values and/or vector masks. (These functions don't translate to real CPU vector instructions, instead we simulate these operations for you in our library, and provide feedback that makes for easier debugging.)  As an example of using the CS149 intrinsics, a vectorized version of the `abs()` function is given in `main.cpp`. This example contains some basic vector loads and stores and manipulates mask registers.  Note that the `abs()` example is only a simple example, and in fact the code does not correctly handle all inputs! (We will let you figure out why!) You may wish to read through all the comments and function definitions in `CS149intrin.h` to know what operations are available to you. 
+
+Here are few hints to help you in your implementation:
+
+-  Every vector instruction is subject to an optional mask parameter.  The mask parameter defines which lanes whose output is "masked" for this operation. A 0 in the mask indicates a lane is masked, and so its value will not be overwritten by the results of the vector operation. If no mask is specified in the operation, no lanes are masked. (Note this equivalent to providing a mask of all ones.) 
+   *Hint:* Your solution will need to use multiple mask registers and various mask operations provided in the library.
+-  *Hint:* Use `_cs149_cntbits` function helpful in this problem.
+-  Consider what might happen if the total number of loop iterations is not a multiple of SIMD vector width. We suggest you test 
+your code with `./myexp -s 3`. *Hint:* You might find `_cs149_init_ones` helpful.
+-  *Hint:* Use `./myexp -l` to print a log of executed vector instruction at the end. 
+Use function `addUserLog()` to add customized debug information in log. Feel free to add additional 
+`CS149Logger.printLog()` to help you debug.
+
+The output of the program will tell you if your implementation generates correct output. If there
+are incorrect results, the program will print the first one it finds and print out a table of
+function inputs and outputs. Your function's output is after "output = ", which should match with 
+the results after "gold = ". The program also prints out a list of statistics describing utilization of the CS149 fake vector
+units. You should consider the performance of your implementation to be the value "Total Vector 
+Instructions". (You can assume every CS149 fake vector instruction takes one cycle on the CS149 fake SIMD CPU.) "Vector Utilization" 
+shows the percentage of vector lanes that are enabled. 
+
+**What you need to do:**
+
+1.  Implement a vectorized version of `clampedExpSerial` in `clampedExpVector` . Your implementation 
+should work with any combination of input array size (`N`) and vector width (`VECTOR_WIDTH`). 
+2.  Run `./myexp -s 10000` and sweep the vector width from 2, 4, 8, to 16. Record the resulting vector 
+utilization. You can do this by changing the `#define VECTOR_WIDTH` value in `CS149intrin.h`. 
+Does the vector utilization increase, decrease or stay the same as `VECTOR_WIDTH` changes? Why?
+3.  _Extra credit: (1 point)_ Implement a vectorized version of `arraySumSerial` in `arraySumVector`. Your implementation may assume that `VECTOR_WIDTH` is a factor of the input array size `N`. Whereas the serial implementation runs in `O(N)` time, your implementation should aim for runtime of `(N / VECTOR_WIDTH + VECTOR_WIDTH)` or even `(N / VECTOR_WIDTH + log2(VECTOR_WIDTH))`  You may find the `hadd` and `interleave` operations useful.
+
+## Program 3: Parallel Fractal Generation Using ISPC (20 points) ##
+
+Now that you're comfortable with SIMD execution, we'll return to parallel Mandelbrot fractal generation (like in program 1). Like Program 1, Program 3 computes a mandelbrot fractal image, but it achieves even greater speedups by utilizing both the CPU's four cores and the SIMD execution units within each core.
+
+In Program 1, you parallelized image generation by creating one thread
+for each processing core in the system. Then, you assigned parts of
+the computation to each of these concurrently executing
+threads. (Since threads were one-to-one with processing cores in
+Program 1, you effectively assigned work explicitly to cores.) Instead
+of specifying a specific mapping of computations to concurrently
+executing threads, Program 3 uses ISPC language constructs to describe
+*independent computations*. These computations may be executed in
+parallel without violating program correctness (and indeed they
+will!). In the case of the Mandelbrot image, computing the value of
+each pixel is an independent computation. With this information, the
+ISPC compiler and runtime system take on the responsibility of
+generating a program that utilizes the CPU's collection of parallel
+execution resources as efficiently as possible.
+
+You will make a simple fix to Program 3 which is written in a combination of
+C++ and ISPC (the error causes a performance problem, not a correctness one).
+With the correct fix, you should observe performance that is over 32 times
+greater than that of the original sequential Mandelbrot implementation from
+`mandelbrotSerial()`.
+
+
+### Program 3, Part 1. A Few ISPC Basics (10 of 20 points) ###
+
+When reading ISPC code, you must keep in mind that although the code appears
+much like C/C++ code, the ISPC execution model differs from that of standard
+C/C++. In contrast to C, multiple program instances of an ISPC program are
+always executed in parallel on the CPU's SIMD execution units. The number of
+program instances executed simultaneously is determined by the compiler (and
+chosen specifically for the underlying machine). This number of concurrent
+instances is available to the ISPC programmer via the built-in variable
+`programCount`. ISPC code can reference its own program instance identifier via
+the built-in `programIndex`. Thus, a call from C code to an ISPC function can
+be thought of as spawning a group of concurrent ISPC program instances
+(referred to in the ISPC documentation as a gang). The gang of instances
+runs to completion, then control returns back to the calling C code.
+
+__Stop. This is your friendly instructor. Please read the preceding paragraph again. Trust me.__
+
+As an example, the following program uses a combination of regular C code and ISPC
+code to add two 1024-element vectors. As we discussed in class, since each
+instance in a gang is independent and performing the exact
+same program logic, execution can be accelerated via
+implementation using SIMD instructions.
+
+A simple ISPC program is given below. The following C code will call the
+following ISPC code:
+
+    ------------------------------------------------------------------------
+    C program code: myprogram.cpp
+    ------------------------------------------------------------------------
+    const int TOTAL_VALUES = 1024;
+    float a[TOTAL_VALUES];
+    float b[TOTAL_VALUES];
+    float c[TOTAL_VALUES]
+ 
+    // Initialize arrays a and b here.
+     
+    sum(TOTAL_VALUES, a, b, c);
+ 
+    // Upon return from sum, result of a + b is stored in c.
+
+The corresponding ISPC code:
+
+    ------------------------------------------------------------------------
+    ISPC code: myprogram.ispc
+    ------------------------------------------------------------------------
+    export sum(uniform int N, uniform float* a, uniform float* b, uniform float* c)
+    {
+      // Assumption programCount divides N evenly.
+      for (int i=0; i<N; i+=programCount)
+      {
+        c[programIndex + i] = a[programIndex + i] + b[programIndex + i];
+      }
+    }
+
+The ISPC program code above interleaves the processing of array elements among
+program instances. Note the similarity to Program 1, where you statically
+assigned parts of the image to threads.
+
+However, rather than thinking about how to divide work among program instances
+(that is, how work is mapped to execution units), it is often more convenient,
+and more powerful, to instead focus only on the partitioning of a problem into
+independent parts. ISPCs `foreach` construct provides a mechanism to express
+problem decomposition. Below, the `foreach` loop in the ISPC function `sum2`
+defines an iteration space where all iterations are independent and therefore
+can be carried out in any order. ISPC handles the assignment of loop iterations
+to concurrent program instances. The difference between `sum` and `sum2` below
+is subtle, but very important. `sum` is imperative: it describes how to
+map work to concurrent instances. The example below is declarative: it
+specifies only the set of work to be performed.
+
+    -------------------------------------------------------------------------
+    ISPC code:
+    -------------------------------------------------------------------------
+    export sum2(uniform int N, uniform float* a, uniform float* b, uniform float* c)
+    {
+      foreach (i = 0 ... N)
+      {
+        c[i] = a[i] + b[i];
+      }
+    }
+
+Before proceeding, you are encouraged to familiarize yourself with ISPC
+language constructs by reading through the ISPC walkthrough available at
+<http://ispc.github.io/example.html>. The example program in the walkthrough
+is almost exactly the same as Program 3's implementation of `mandelbrot_ispc()`
+in `mandelbrot.ispc`. In the assignment code, we have changed the bounds of
+the foreach loop to yield a more straightforward implementation.
+
+**What you need to do:**
+
+1.  Compile and run the program mandelbrot ispc. __The ISPC compiler is currently configured to emit 8-wide AVX2 vector instructions.__  What is the maximum
+  speedup you expect given what you know about these CPUs?
+  Why might the number you observe be less than this ideal? (Hint:
+  Consider the characteristics of the computation you are performing?
+  Describe the parts of the image that present challenges for SIMD
+  execution? Comparing the performance of rendering the different views
+  of the Mandelbrot set may help confirm your hypothesis.).  
+
+  We remind you that for the code described in this subsection, the ISPC
+  compiler maps gangs of program instances to SIMD instructions executed
+  on a single core. This parallelization scheme differs from that of
+  Program 1, where speedup was achieved by running threads on multiple
+  cores.
+
+If you look into detailed technical material about the CPUs in the myth machines, you will find there are a complicated set of rules about how many scalar and vector instructions can be run per clock.  For the purposes of this assignment, you can assume that there are about as many 8-wide vector execution units as there are scalar execution units for floating point math.   
+
+### Program 3, Part 2: ISPC Tasks (10 of 20 points) ###
+
+ISPCs SPMD execution model and mechanisms like `foreach` facilitate the creation
+of programs that utilize SIMD processing. The language also provides an additional
+mechanism utilizing multiple cores in an ISPC computation. This mechanism is
+launching _ISPC tasks_.
+
+See the `launch[2]` command in the function `mandelbrot_ispc_withtasks`. This
+command launches two tasks. Each task defines a computation that will be
+executed by a gang of ISPC program instances. As given by the function
+`mandelbrot_ispc_task`, each task computes a region of the final image. Similar
+to how the `foreach` construct defines loop iterations that can be carried out
+in any order (and in parallel by ISPC program instances, the tasks created by
+this launch operation can be processed in any order (and in parallel on
+different CPU cores).
+
+**What you need to do:**
+
+1.  Run `mandelbrot_ispc` with the parameter `--tasks`. What speedup do you
+  observe on view 1? What is the speedup over the version of `mandelbrot_ispc` that
+  does not partition that computation into tasks?
+2.  There is a simple way to improve the performance of
+  `mandelbrot_ispc --tasks` by changing the number of tasks the code
+  creates. By only changing code in the function
+  `mandelbrot_ispc_withtasks()`, you should be able to achieve
+  performance that exceeds the sequential version of the code by over 32 times!
+  How did you determine how many tasks to create? Why does the
+  number you chose work best?
+3.  _Extra Credit: (2 points)_ What are differences between the thread
+  abstraction (used in Program 1) and the ISPC task abstraction? There
+  are some obvious differences in semantics between the (create/join
+  and (launch/sync) mechanisms, but the implications of these differences
+  are more subtle. Here's a thought experiment to guide your answer: what
+  happens when you launch 10,000 ISPC tasks? What happens when you launch
+  10,000 threads? (For this thought experiment, please discuss in the general case - 
+  i.e. don't tie your discussion to this given mandelbrot program.)
+
+_The smart-thinking student's question_: Hey wait! Why are there two different
+mechanisms (`foreach` and `launch`) for expressing independent, parallelizable
+work to the ISPC system? Couldn't the system just partition the many iterations
+of `foreach` across all cores and also emit the appropriate SIMD code for the
+cores?
+
+_Answer_: Great question! And there are a lot of possible answers. Come to
+office hours.
+
+## Program 4: Iterative `sqrt` (15 points) ##
+
+Program 4 is an ISPC program that computes the square root of 20 million
+random numbers between 0 and 3. It uses a fast, iterative implementation of
+square root that uses Newton's method to solve the equation ${\frac{1}{x^2}} - S = 0$.
+The value 1.0 is used as the initial guess in this implementation. The graph below shows the 
+number of iterations required for `sqrt` to converge to an accurate solution 
+for values in the (0-3) range. (The implementation does not converge for 
+inputs outside this range). Notice that the speed of convergence depends on the 
+accuracy of the initial guess.
+
+Note: This problem is a review to double-check your understanding, as it covers similar concepts as programs 2 and 3.
+
+![Convergence of sqrt](handout-images/sqrt_graph.jpg "Convergence of sqrt on the range 0-3 with starting guess 1.0. Note that iterations until convergence is immediate for an input value of 1 and increases as the input value goes toward 0 or 3 (highest value is for input of 3).")
+
+**What you need to do:**
+
+1.  Build and run `sqrt`. Report the ISPC implementation speedup for 
+  single CPU core (no tasks) and when using all cores (with tasks). What 
+  is the speedup due to SIMD parallelization? What is the speedup due to 
+  multi-core parallelization?
+2.  Modify the contents of the array values to improve the relative speedup 
+  of the ISPC implementations. Construct a specifc input that __maximizes speedup over the sequential version of the code__ and report the resulting speedup achieved (for both the with- and without-tasks ISPC implementations). Does your modification improve SIMD speedup?
+  Does it improve multi-core speedup (i.e., the benefit of moving from ISPC without-tasks to ISPC with tasks)? Please explain why.
+3.  Construct a specific input for `sqrt` that __minimizes speedup for ISPC (without-tasks) over the sequential version of the code__. Describe this input, describe why you chose it, and report the resulting relative performance of the ISPC implementations. What is the reason for the loss in efficiency? 
+    __(keep in mind we are using the `--target=avx2` option for ISPC, which generates 8-wide SIMD instructions)__. 
+4.  _Extra Credit: (up to 2 points)_ Write your own version of the `sqrt` 
+ function manually using AVX2 intrinsics. To get credit your 
+    implementation should be nearly as fast (or faster) than the binary 
+    produced using ISPC. You may find the [Intel Intrinsics Guide](https://software.intel.com/sites/landingpage/IntrinsicsGuide/) 
+    very helpful.
+ 
+## Program 5: BLAS `saxpy` (10 points) ##
+
+Program 5 is an implementation of the saxpy routine in the BLAS (Basic Linear
+Algebra Subproblems) library that is widely used (and heavily optimized) on 
+many systems. `saxpy` computes the simple operation `result = scale*X+Y`, where `X`, `Y`, 
+and `result` are vectors of `N` elements (in Program 5, `N` = 20 million) and `scale` is a scalar. Note that 
+`saxpy` performs two math operations (one multiply, one add) for every three 
+elements used. `saxpy` is a *trivially parallelizable computation* and features predictable, regular data access and predictable execution cost.
+
+**What you need to do:**
+
+1.  Compile and run `saxpy`. The program will report the performance of
+  ISPC (without tasks) and ISPC (with tasks) implementations of saxpy. What 
+  speedup from using ISPC with tasks do you observe? Explain the performance of this program.
+  Do you think it can be substantially improved? (For example, could you rewrite the code to achieve near linear speedup? Yes or No? Please justify your answer.)
+2. __Extra Credit:__ (1 point) Note that the total memory bandwidth consumed computation in `main.cpp` is `TOTAL_BYTES = 4 * N * sizeof(float);`.  Even though `saxpy` loads one element from X, one element from Y, and writes one element to `result` the multiplier by 4 is correct.  Why is this the case? (Hint, think about how CPU caches work.)
+3. __Extra Credit:__ (points handled on a case-by-case basis) Improve the performance of `saxpy`.
+  We're looking for a significant speedup here, not just a few percentage 
+  points. If successful, describe how you did it and what a best-possible implementation on these systems might achieve. Also, if successful, come tell the staff, we'll be interested. ;-)
+
+Notes: Some students have gotten hung up on this question (thinking too hard) in the past. We expect a simple answer, but the results from running this problem might trigger more questions in your head.  Feel encouraged to come talk to the staff.
+
+## Program 6: Making `K-Means` Faster (15 points) ##
+
+Program 6 clusters one million data points using the K-Means data clustering algorithm ([Wikipedia](https://en.wikipedia.org/wiki/K-means_clustering), [CS 221 Handout](https://stanford.edu/~cpiech/cs221/handouts/kmeans.html)). If you're unfamiliar with the algorithm, don't worry! The specifics aren't important to the exercise, but at a high level, given K starting points (cluster centroids), the algorithm iteratively updates the centroids until a convergence criteria is met. The results can be seen in the below images depicting the state of the algorithm at the beginning and end of the program, where red stars are cluster centroids and the data point colors correspond to cluster assignments.
+
+![K-Means starting and ending point](./handout-images/kmeans.jpg "Starting and ending point of the K-Means algorithm applied to 2 dimensional data.")
+
+In the starter code you have been given a correct implementation of the K-means algorithm, however in its current state it is not quite as fast as we would like it to be. This is where you come in! Your job will be to figure out **where** the implementation needs to be improved and **how** to improve it. The key skill you will practice in this problem is __isolating a performance hotspot__.  We aren't going to tell you where to look in the code.  You need to figure it out. Your first thought should be... where is the code spending the most time and you should insert timing code into the source to make measurements.  Based on these measurements, you should focus in on the part of the code that is taking a significant portion of the runtime, and then understand it more carefully to determine if there is a way to speed it up.
+
+**What you need to do:**
+
+1. Use the command `ln -s /afs/ir.stanford.edu/class/cs149/data/data.dat ./data.dat` to create a symbolic link to the dataset in your current directory (make sure you're in the `prog6_kmeans` directory). This is a large file (~800MB), so this is the preferred way to access it. However, if you'd like a local copy, you can run this command on your personal machine `scp [Your SUNetID]@myth[51-66].stanford.edu:/afs/ir.stanford.edu/class/cs149/data/data.dat ./data.dat`. Once you have the data, compile and run `kmeans` (it may take longer than usual for the program to load the data on your first try). The program will report the total runtime of the algorithm on the data.
+2.  Run `pip install -r requirements.txt` to download the necessary plotting packages. Next, try running `python3 plot.py` which will generate the files "start.png" and "end.png" from the logs ("start.log" and "end.log") generated from running `kmeans`. These files will be in the current directory and should look similar to the above images. __Warning: You might notice that not all points are assigned to the "closest" centroid. This is okay.__ (For those that want to understand why: We project 100-dimensional datapoints down to 2-D using [PCA](https://en.wikipedia.org/wiki/Principal_component_analysis) to produce these visualizations. Therefore, while the 100-D datapoint is near the appropriate centroid in high dimensional space, the projects of the datapoint and the centroid may not be close to each other in 2-D.). As long as the clustering looks "reasonable" (use the images produced by the starter code in step 2 as a reference) and most points appear to be assigned to the clostest centroid, the code remains correct.
+3.  Utilize the timing function in `common/CycleTimer.h` to determine where in the code there are performance bottlenecks. You will need to call `CycleTimer::currentSeconds()`, which returns the current time (in seconds) as a floating point number. Where is most of the time being spent in the code?
+4.  Based on your findings from the previous step, improve the implementation. We are looking for a speedup of about 2.1x or more (i.e $\frac{oldRuntime}{newRuntime} >= 2.1$). Please explain how you arrived at your solution, as well as what your final solution is and the associated speedup. The writeup of this process should describe a sequence of steps. We expect something of the form "I measured ... which let me to believe X. So to improve things I tried ... resulting in a speedup/slowdown of ...".
+  
+Constraints:
+- You may only modify code in `kmeansThread.cpp`. You are not allowed to modify the `stoppingConditionMet` function and you cannot change the interface to `kMeansThread`, but anything is fair game (e.g. you can add new members to the `WorkerArgs` struct, rewrite functions, allocate new arrays, etc.). However...
+- **Make sure you do not change the functionality of the implementation! If the algorithm doesn't converge or the result from running `python3 plot.py` does not look like what's produced by the starter code, something is wrong!** For example, you cannot simply remove the main "while" loop or change the semantics of the `dist` function, since this would yield incorrect results.
+- __Important:__ you may only parallelize __one__ of the following functions: `dist`, `computeAssignments`, `computeCentroids`, `computeCost`. For an example of how to write parallel code using `std::thread`, see `prog1_mandelbrot_threads/mandelbrotThread.cpp`.
+  
+Tips / Notes: 
+- This problem should not require a significant amount of coding. Our solution modified/added around 20-25 lines of code.
+- Once you've used timers to isolate hotspots, to improve the code make sure you understand the relative sizes of K, M, and N.
+- Try to prioritize code improvements with the potential for high returns and think about the different axes of parallelism available in the problem and how you may take advantage of them.
+- **The objective of this program is to give you more practice with learning how to profile and debug performance oriented programs. Even if you don't hit the performance target, if you demonstrate good/thoughtful debugging skills in the writeup you'll still get most of the points.**
+
+## What About ARM-Based Macs? ##
+
+For those with access to a new Apple ARM-based laptop, check out the handout [here](README_aarch64.md). Produce a report of performance of the various programs on a new Apple ARM-based laptop. The staff is curious about what you will find.  What speedups are you observing from SIMD execution? Those without access to a modern Macbook could try to use ARM-based servers that are available on a cloud provider like AWS, although it has not been tested by the staff. Please do not submit any code from running on ARM based machines to Gradescope.  
+
+## For the Curious (highly recommended) ##
+
+Want to know about ISPC and how it was created? One of the two creators of ISPC, Matt Pharr, wrote an __amazing blog post__ on the history of its development called [The story of ispc](https://pharr.org/matt/blog/2018/04/30/ispc-all).  It really touches on many issues of parallel system design -- in particular the value of limiting the scope of programming languages vs general purpose programming languages.  And it gets at real-world answers to common questions like... "why can't the compiler just automatically parallelize my program for me?" IMHO it's a must read for CS149 students!
+
+## Hand-in Instructions ##
+
+Handin will be performed via [Gradescope](https://www.gradescope.com). Only one handin per group is required. However, please make sure that you add your partner's name to the gradescope submission. There are two places you will need to turn in the files on Gradescope: `Assignment 1 (Write-Up)` and `Assignment 1 (Code)`. 
+
+Please place the following in `Assignment 1 (Write-Up)`:
+* Your writeup, in a file called `writeup.pdf`. Please make sure both group members' names and SUNet id's are in the document. (if you are a group of two)
+
+Please place the following in `Assignment 1 (Code)`:
+* Your implementation of `main.cpp` in Program 2, in a file called `prob2.cpp`
+* Your implementation of `kmeansThread.cpp` in Program 6, in a file called `prob6.cpp`
+* Any additional code, for example, because you attempted an extra credit
+
+Please tell the CAs to look for your extra credit in your write-up. When handed in, all code must be compilable and runnable out of the box on the myth machines!
+
+## Resources and Notes ##
+
+-  Extensive ISPC documentation and examples can be found at
+  <http://ispc.github.io/>
+-  Zooming into different locations of the mandelbrot image can be quite
+  fascinating
+-  Intel provides a lot of supporting material about AVX2 vector instructions at
+  <http://software.intel.com/en-us/avx/>.  
+-  The [Intel Intrinsics Guide](https://software.intel.com/sites/landingpage/IntrinsicsGuide/) is very useful.
+
+
+
+================================================
+FILE: README_aarch64.md
+================================================
+# Assignment 1: Performance Analysis on a Quad-Core CPU #
+
+**Due Fri Oct 3, 11:59pm**
+
+**100 points total + 6 points extra credit**
+
+## Overview ##
+
+This assignment is intended to help you develop an understanding of the two primary forms of parallel execution present in a modern multi-core CPU:
+
+1. SIMD execution within a single processing core
+2. Parallel execution using multiple cores (You'll see effects of Intel Hyper-threading as well.)
+
+You will also gain experience measuring and reasoning about the
+performance of parallel programs (a challenging, but important, skill you will
+use throughout this class). This assignment involves only a small amount of
+programming, but a lot of analysis!
+
+__Note: Running on Arm is optional and not counted for credit.__
+
+## Environment Setup ##
+
+__You will need to run code on an Arm based machine, such as an M-series Mac.__
+
+Note: You will first need to install the Intel SPMD Program Compiler (ISPC) available here: <http://ispc.github.io/.>
+
+To get started:
+
+1. ISPC is needed to compile many of the programs used in this assignment. ISPC can be easily installed on the myth machines through the following steps:  
+
+Download the linux binary into a local directory of your choice. You can get ISPC compiler binaries for Linux from the ISPC [downloads page](https://ispc.github.io/downloads.html). For macOS, we recommend you use `curl` or `wget` (if not found, a quick Google search can provide information on how to get these tools locally) to directly download the binary from the downloads page. As of Fall 2025 Week 1, the `wget` line below works:
+
+
+    wget https://github.com/ispc/ispc/releases/download/v1.28.1/ispc-v1.28.1-MacOS.tar.gz
+
+Untar the downloaded file: `tar -xvf ispc-v1.28.1-MacOS.tar.gz`
+
+Add the ISPC `bin` directory to your system path.  For example, if untarring the downloaded file produces the directory `~/Downloads/ispc-v1.28.1-MacOS`, in bash you'd update your path variable with:
+
+    export PATH=$PATH:${HOME}/Downloads/ispc-v1.28.1-MacOS/bin
+
+
+The above line can be added to your `.bashrc` file for permanence.
+
+2. The assignment starter code is available on <https://github.com/stanford-cs149/asst1>. Please clone the Assignment 1 starter code using:
+
+    `git clone https://github.com/stanford-cs149/asst1.git`
+
+## Program 1: Parallel Fractal Generation Using Threads (20 points) ##
+
+Build and run the code in the `prog1_mandelbrot_threads/` directory of
+the code base. (Type `make` to build, and `./mandelbrot` to run it.)
+This program produces the image file `mandelbrot-serial.ppm`, which is a visualization of a famous set of
+complex numbers called the Mandelbrot set. As you can see in the images below, the
+result is a familiar and beautiful fractal.  Each pixel in the image
+corresponds to a value in the complex plane, and the brightness of
+each pixel is proportional to the computational cost of determining
+whether the value is contained in the Mandelbrot set. To get image 2,
+use the command option `--view 2`.  (See function `mandelbrotSerial()`
+defined in `mandelbrotSerial.cpp`). You can learn more about the
+definition of the Mandelbrot set at
+<http://en.wikipedia.org/wiki/Mandelbrot_set>.
+
+
+![Mandelbrot Set](handout-images/mandelbrot_viz.jpg "A visualization of two views of the Mandelbrot set. The cost of computing each pixel is proportional to its brightness. When running programs 1 and 3, you can use the command line option `--view 2` to set output to be view 2.")
+
+Your job is to parallelize the computation of the images using 
+[std::thread](https://en.cppreference.com/w/cpp/thread/thread). Starter
+code that spawns one additional thread is provided in the function
+`mandelbrotThread()` located in `mandelbrotThread.cpp`. In this function, the
+main application thread creates another additional thread using the constructor
+`std::thread(function, args...)` It waits for this thread to complete by calling
+`join` on the thread object.
+Currently the launched thread does not do any computation and returns immediately.
+You should add code to `workerThreadStart` function to accomplish this task.
+You will not need to make use of any other std::thread API calls in this assignment.
+
+**What you need to do:**
+
+1.  Modify the starter code to parallelize the Mandelbrot generation using 
+ two processors. Specifically, compute the top half of the image in
+  thread 0, and the bottom half of the image in thread 1. This type
+    of problem decomposition is referred to as _spatial decomposition_ since
+  different spatial regions of the image are computed by different processors.
+2.  Extend your code to use 2 to the number of (performance CPU cores on your Mac or) machine threads, partitioning the image
+  generation work accordingly (threads should get blocks of the image). In your writeup hypothesize why this is (or is not) the case? (you may also wish to produce a graph __for VIEW 2__ to help you come up with a good answer. Hint: take a careful look at the three-thread datapoint.)
+3.  To confirm (or disprove) your hypothesis, measure the amount of time
+  each thread requires to complete its work by inserting timing code at
+  the beginning and end of `workerThreadStart()`. How do your measurements
+  explain the speedup graph you previously created?
+4.  Modify the mapping of work to threads to improve speedup as much as possible on the Mandelbrot set. 
+  You may not use any
+  synchronization between threads in your solution. We are expecting you to come up with a single work decomposition policy that will work well for all thread counts---hard coding a solution specific to each configuration is not allowed! (Hint: There is a very simple static
+  assignment that will achieve this goal, and no communication/synchronization
+  among threads is necessary.). In your writeup, describe your approach to parallelization
+  and report the final 8-thread speedup obtained with the same number of threads as the number of performance CPU cores your machine has. 
+5. Now run your improved code with 2 * (number of performance CPU cores on your) machine threads. Is performance noticably greater than when running with eight threads? Why or why not? 
+  
+## Program 2: Vectorizing Code Using SIMD Intrinsics (20 points) ##
+
+Take a look at the function `clampedExpSerial` in `prog2_vecintrin/main.cpp` of the
+Assignment 1 code base.  The `clampedExp()` function raises `values[i]` to the power given by `exponents[i]` for all elements of the input array and clamps the resulting values at 9.999999.  In program 2, your job is to vectorize this piece of code so it can be run on a machine with SIMD vector instructions.
+
+However, rather than craft an implementation using SSE or AVX2 vector intrinsics or Neon vector intrinsics that map to real SIMD vector instructions on modern CPUs, to make things a little easier, we're asking you to implement your version using CS149's "fake vector intrinsics" defined in `CS149intrin.h`.   The `CS149intrin.h` library provides you with a set of vector instructions that operate
+on vector values and/or vector masks. (These functions don't translate to real CPU vector instructions, instead we simulate these operations for you in our library, and provide feedback that makes for easier debugging.)  As an example of using the CS149 intrinsics, a vectorized version of the `abs()` function is given in `main.cpp`. This example contains some basic vector loads and stores and manipulates mask registers.  Note that the `abs()` example is only a simple example, and in fact the code does not correctly handle all inputs! (We will let you figure out why!) You may wish to read through all the comments and function definitions in `CS149intrin.h` to know what operations are available to you. 
+
+Here are few hints to help you in your implementation:
+
+-  Every vector instruction is subject to an optional mask parameter.  The mask parameter defines which lanes whose output is "masked" for this operation. A 0 in the mask indicates a lane is masked, and so its value will not be overwritten by the results of the vector operation. If no mask is specified in the operation, no lanes are masked. (Note this equivalent to providing a mask of all ones.) 
+   *Hint:* Your solution will need to use multiple mask registers and various mask operations provided in the library.
+-  *Hint:* Use `_cs149_cntbits` function helpful in this problem.
+-  Consider what might happen if the total number of loop iterations is not a multiple of SIMD vector width. We suggest you test 
+your code with `./myexp -s 3`. *Hint:* You might find `_cs149_init_ones` helpful.
+-  *Hint:* Use `./myexp -l` to print a log of executed vector instruction at the end. 
+Use function `addUserLog()` to add customized debug information in log. Feel free to add additional 
+`CS149Logger.printLog()` to help you debug.
+
+The output of the program will tell you if your implementation generates correct output. If there
+are incorrect results, the program will print the first one it finds and print out a table of
+function inputs and outputs. Your function's output is after "output = ", which should match with 
+the results after "gold = ". The program also prints out a list of statistics describing utilization of the CS149 fake vector
+units. You should consider the performance of your implementation to be the value "Total Vector 
+Instructions". (You can assume every CS149 fake vector instruction takes one cycle on the CS149 fake SIMD CPU.) "Vector Utilization" 
+shows the percentage of vector lanes that are enabled. 
+
+**What you need to do:**
+
+1.  Implement a vectorized version of `clampedExpSerial` in `clampedExpVector` . Your implementation 
+should work with any combination of input array size (`N`) and vector width (`VECTOR_WIDTH`). 
+2.  Run `./myexp -s 10000` and sweep the vector width from 2, 4, 8, to 16. Record the resulting vector 
+utilization. You can do this by changing the `#define VECTOR_WIDTH` value in `CS149intrin.h`. 
+Does the vector utilization increase, decrease or stay the same as `VECTOR_WIDTH` changes? Why?
+3.  _Extra credit: (1 point)_ Implement a vectorized version of `arraySumSerial` in `arraySumVector`. Your implementation may assume that `VECTOR_WIDTH` is a factor of the input array size `N`. Whereas the serial implementation runs in `O(N)` time, your implementation should aim for runtime of `(N / VECTOR_WIDTH + VECTOR_WIDTH)` or even `(N / VECTOR_WIDTH + log2(VECTOR_WIDTH))`  You may find the `hadd` and `interleave` operations useful.
+
+## Program 3: Parallel Fractal Generation Using ISPC (20 points) ##
+
+Now that you're comfortable with SIMD execution, we'll return to parallel Mandelbrot fractal generation (like in program 1). Like Program 1, Program 3 computes a mandelbrot fractal image, but it achieves even greater speedups by utilizing both the CPU's four cores and the SIMD execution units within each core.
+
+In Program 1, you parallelized image generation by creating one thread
+for each processing core in the system. Then, you assigned parts of
+the computation to each of these concurrently executing
+threads. (Since threads were one-to-one with processing cores in
+Program 1, you effectively assigned work explicitly to cores.) Instead
+of specifying a specific mapping of computations to concurrently
+executing threads, Program 3 uses ISPC language constructs to describe
+*independent computations*. These computations may be executed in
+parallel without violating program correctness (and indeed they
+will!). In the case of the Mandelbrot image, computing the value of
+each pixel is an independent computation. With this information, the
+ISPC compiler and runtime system take on the responsibility of
+generating a program that utilizes the CPU's collection of parallel
+execution resources as efficiently as possible.
+
+You will make a simple fix to Program 3 which is written in a combination of
+C++ and ISPC (the error causes a performance problem, not a correctness one).
+With the correct fix, you should observe performance that is over 32 times
+greater than that of the original sequential Mandelbrot implementation from
+`mandelbrotSerial()`.
+
+
+### Program 3, Part 1. A Few ISPC Basics (10 of 20 points) ###
+
+When reading ISPC code, you must keep in mind that although the code appears
+much like C/C++ code, the ISPC execution model differs from that of standard
+C/C++. In contrast to C, multiple program instances of an ISPC program are
+always executed in parallel on the CPU's SIMD execution units. The number of
+program instances executed simultaneously is determined by the compiler (and
+chosen specifically for the underlying machine). This number of concurrent
+instances is available to the ISPC programmer via the built-in variable
+`programCount`. ISPC code can reference its own program instance identifier via
+the built-in `programIndex`. Thus, a call from C code to an ISPC function can
+be thought of as spawning a group of concurrent ISPC program instances
+(referred to in the ISPC documentation as a gang). The gang of instances
+runs to completion, then control returns back to the calling C code.
+
+__Stop. This is your friendly instructor. Please read the preceding paragraph again. Trust me.__
+
+As an example, the following program uses a combination of regular C code and ISPC
+code to add two 1024-element vectors. As we discussed in class, since each
+instance in a gang is independent and performing the exact
+same program logic, execution can be accelerated via
+implementation using SIMD instructions.
+
+A simple ISPC program is given below. The following C code will call the
+following ISPC code:
+
+    ------------------------------------------------------------------------
+    C program code: myprogram.cpp
+    ------------------------------------------------------------------------
+    const int TOTAL_VALUES = 1024;
+    float a[TOTAL_VALUES];
+    float b[TOTAL_VALUES];
+    float c[TOTAL_VALUES]
+ 
+    // Initialize arrays a and b here.
+     
+    sum(TOTAL_VALUES, a, b, c);
+ 
+    // Upon return from sum, result of a + b is stored in c.
+
+The corresponding ISPC code:
+
+    ------------------------------------------------------------------------
+    ISPC code: myprogram.ispc
+    ------------------------------------------------------------------------
+    export sum(uniform int N, uniform float* a, uniform float* b, uniform float* c)
+    {
+      // Assumption programCount divides N evenly.
+      for (int i=0; i<N; i+=programCount)
+      {
+        c[programIndex + i] = a[programIndex + i] + b[programIndex + i];
+      }
+    }
+
+The ISPC program code above interleaves the processing of array elements among
+program instances. Note the similarity to Program 1, where you statically
+assigned parts of the image to threads.
+
+However, rather than thinking about how to divide work among program instances
+(that is, how work is mapped to execution units), it is often more convenient,
+and more powerful, to instead focus only on the partitioning of a problem into
+independent parts. ISPCs `foreach` construct provides a mechanism to express
+problem decomposition. Below, the `foreach` loop in the ISPC function `sum2`
+defines an iteration space where all iterations are independent and therefore
+can be carried out in any order. ISPC handles the assignment of loop iterations
+to concurrent program instances. The difference between `sum` and `sum2` below
+is subtle, but very important. `sum` is imperative: it describes how to
+map work to concurrent instances. The example below is declarative: it
+specifies only the set of work to be performed.
+
+    -------------------------------------------------------------------------
+    ISPC code:
+    -------------------------------------------------------------------------
+    export sum2(uniform int N, uniform float* a, uniform float* b, uniform float* c)
+    {
+      foreach (i = 0 ... N)
+      {
+        c[i] = a[i] + b[i];
+      }
+    }
+
+Before proceeding, you are encouraged to familiarize yourself with ISPC
+language constructs by reading through the ISPC walkthrough available at
+<http://ispc.github.io/example.html>. The example program in the walkthrough
+is almost exactly the same as Program 3's implementation of `mandelbrot_ispc()`
+in `mandelbrot.ispc`. In the assignment code, we have changed the bounds of
+the foreach loop to yield a more straightforward implementation.
+
+**What you need to do:**
+
+1.  Compile and run the program mandelbrot ispc by changing `avx2-i32x8` to `neon-i32x8` and `x86-64` to `aarch64` in the Makefile and then run make. __The ISPC compiler is currently configured to emit 8-wide Neon vector instructions.__  What is the maximum
+  speedup you expect given what you know about these CPUs?
+  Why might the number you observe be less than this ideal? (Hint:
+  Consider the characteristics of the computation you are performing?
+  Describe the parts of the image that present challenges for SIMD
+  execution? Comparing the performance of rendering the different views
+  of the Mandelbrot set may help confirm your hypothesis.).  
+
+  We remind you that for the code described in this subsection, the ISPC
+  compiler maps gangs of program instances to SIMD instructions executed
+  on a single core. This parallelization scheme differs from that of
+  Program 1, where speedup was achieved by running threads on multiple
+  cores.
+  
+
+### Program 3, Part 2: ISPC Tasks (10 of 20 points) ###
+
+ISPCs SPMD execution model and mechanisms like `foreach` facilitate the creation
+of programs that utilize SIMD processing. The language also provides an additional
+mechanism utilizing multiple cores in an ISPC computation. This mechanism is
+launching _ISPC tasks_.
+
+See the `launch[2]` command in the function `mandelbrot_ispc_withtasks`. This
+command launches two tasks. Each task defines a computation that will be
+executed by a gang of ISPC program instances. As given by the function
+`mandelbrot_ispc_task`, each task computes a region of the final image. Similar
+to how the `foreach` construct defines loop iterations that can be carried out
+in any order (and in parallel by ISPC program instances, the tasks created by
+this launch operation can be processed in any order (and in parallel on
+different CPU cores).
+
+**What you need to do:**
+
+1.  Run `mandelbrot_ispc` with the parameter `--tasks`. What speedup do you
+  observe on view 1? What is the speedup over the version of `mandelbrot_ispc` that
+  does not partition that computation into tasks?
+2.  There is a simple way to improve the performance of
+  `mandelbrot_ispc --tasks` by changing the number of tasks the code
+  creates. By only changing code in the function
+  `mandelbrot_ispc_withtasks()`, you should be able to achieve
+  performance that exceeds the sequential version by a substantial amount!
+  How did you determine how many tasks to create? Why does the
+  number you chose work best?
+3.  _Extra Credit: (2 points)_ What are differences between the thread
+  abstraction (used in Program 1) and the ISPC task abstraction? There
+  are some obvious differences in semantics between the (create/join
+  and (launch/sync) mechanisms, but the implications of these differences
+  are more subtle. Here's a thought experiment to guide your answer: what
+  happens when you launch 10,000 ISPC tasks? What happens when you launch
+  10,000 threads? (For this thought experiment, please discuss in the general case - 
+  i.e. don't tie your discussion to this given mandelbrot program.)
+
+_The smart-thinking student's question_: Hey wait! Why are there two different
+mechanisms (`foreach` and `launch`) for expressing independent, parallelizable
+work to the ISPC system? Couldn't the system just partition the many iterations
+of `foreach` across all cores and also emit the appropriate SIMD code for the
+cores?
+
+_Answer_: Great question! And there are a lot of possible answers. Come to
+office hours.
+
+## Program 4: Iterative `sqrt` (15 points) ##
+
+Program 4 is an ISPC program that computes the square root of 20 million
+random numbers between 0 and 3. It uses a fast, iterative implementation of
+square root that uses Newton's method to solve the equation ${\frac{1}{x^2}} - S = 0$.
+The value 1.0 is used as the initial guess in this implementation. The graph below shows the 
+number of iterations required for `sqrt` to converge to an accurate solution 
+for values in the (0-3) range. (The implementation does not converge for 
+inputs outside this range). Notice that the speed of convergence depends on the 
+accuracy of the initial guess.
+
+Note: This problem is a review to double-check your understanding, as it covers similar concepts as programs 2 and 3.
+
+![Convergence of sqrt](handout-images/sqrt_graph.jpg "Convergence of sqrt on the range 0-3 with starting guess 1.0. Note that iterations until convergence is immediate for an input value of 1 and increases as the input value goes toward 0 or 3 (highest value is for input of 3).")
+
+**What you need to do:**
+
+1.  Build and run sqrt, by changing `avx2-i32x8` to `neon-i32x8` and `x86-64` to `aarch64` in the Makefile and then running make. Report the ISPC implementation speedup for single CPU core (no tasks) and when using all cores (with tasks). What 
+  is the speedup due to SIMD parallelization? What is the speedup due to 
+  multi-core parallelization?
+2.  Modify the contents of the array values to improve the relative speedup 
+  of the ISPC implementations. Construct a specifc input that __maximizes speedup over the sequential version of the code__ and report the resulting speedup achieved (for both the with- and without-tasks ISPC implementations). Does your modification improve SIMD speedup?
+  Does it improve multi-core speedup (i.e., the benefit of moving from ISPC without-tasks to ISPC with tasks)? Please explain why.
+3.  Construct a specific input for `sqrt` that __minimizes speedup for ISPC (without-tasks) over the sequential version of the code__. Describe this input, describe why you chose it, and report the resulting relative performance of the ISPC implementations. What is the reason for the loss in efficiency? 
+    __(keep in mind we are using the `--target=neon` option for ISPC, which generates 8-wide SIMD instructions)__. 
+4.  _Extra Credit: (up to 2 points)_ Write your own version of the `sqrt` 
+ function manually using AVX2 intrinsics. To get credit your 
+    implementation should be nearly as fast (or faster) than the binary 
+    produced using ISPC. You may find the [Arm Neon Intrinsics Guide]([https://software.intel.com/sites/landingpage/IntrinsicsGuide/](https://arm-software.github.io/acle/neon_intrinsics/advsimd.html)) 
+    very helpful.
+ 
+## Program 5: BLAS `saxpy` (10 points) ##
+
+Program 5 is an implementation of the saxpy routine in the BLAS (Basic Linear
+Algebra Subproblems) library that is widely used (and heavily optimized) on 
+many systems. `saxpy` computes the simple operation `result = scale*X+Y`, where `X`, `Y`, 
+and `result` are vectors of `N` elements (in Program 5, `N` = 20 million) and `scale` is a scalar. Note that 
+`saxpy` performs two math operations (one multiply, one add) for every three 
+elements used. `saxpy` is a *trivially parallelizable computation* and features predictable, regular data access and predictable execution cost.
+
+**What you need to do:**
+
+1.  Compile and run `saxpy`. The program will report the performance of
+  ISPC (without tasks) and ISPC (with tasks) implementations of saxpy. What 
+  speedup from using ISPC with tasks do you observe? Explain the performance of this program.
+  Do you think it can be substantially improved? (For example, could you rewrite the code to achieve near linear speedup? Yes or No? Please justify your answer.)
+2. __Extra Credit:__ (1 point) Note that the total memory bandwidth consumed computation in `main.cpp` is `TOTAL_BYTES = 4 * N * sizeof(float);`.  Even though `saxpy` loads one element from X, one element from Y, and writes one element to `result` the multiplier by 4 is correct.  Why is this the case? (Hint, think about how CPU caches work.)
+3. __Extra Credit:__ (points handled on a case-by-case basis) Improve the performance of `saxpy`.
+  We're looking for a significant speedup here, not just a few percentage 
+  points. If successful, describe how you did it and what a best-possible implementation on these systems might achieve. Also, if successful, come tell the staff, we'll be interested. ;-)
+
+Notes: Some students have gotten hung up on this question (thinking too hard) in the past. We expect a simple answer, but the results from running this problem might trigger more questions in your head.  Feel encouraged to come talk to the staff.
+
+## Program 6: Making `K-Means` Faster (15 points) ##
+
+Program 6 clusters one million data points using the K-Means data clustering algorithm ([Wikipedia](https://en.wikipedia.org/wiki/K-means_clustering), [CS 221 Handout](https://stanford.edu/~cpiech/cs221/handouts/kmeans.html)). If you're unfamiliar with the algorithm, don't worry! The specifics aren't important to the exercise, but at a high level, given K starting points (cluster centroids), the algorithm iteratively updates the centroids until a convergence criteria is met. The results can be seen in the below images depicting the state of the algorithm at the beginning and end of the program, where red stars are cluster centroids and the data point colors correspond to cluster assignments.
+
+![K-Means starting and ending point](./handout-images/kmeans.jpg "Starting and ending point of the K-Means algorithm applied to 2 dimensional data.")
+
+In the starter code you have been given a correct implementation of the K-means algorithm, however in its current state it is not quite as fast as we would like it to be. This is where you come in! Your job will be to figure out **where** the implementation needs to be improved and **how** to improve it. The key skill you will practice in this problem is __isolating a performance hotspot__.  We aren't going to tell you where to look in the code.  You need to figure it out. Your first thought should be... where is the code spending the most time and you should insert timing code into the source to make measurements.  Based on these measurements, you should focus in on the part of the code that is taking a significant portion of the runtime, and then understand it more carefully to determine if there is a way to speed it up.
+
+**What you need to do:**
+
+1. Download the data by running this command on your personal machine `scp [Your SUNetID]@myth[51-66].stanford.edu:/afs/ir.stanford.edu/class/cs149/data/data.dat ./data.dat`. Once you have the data, compile and run `kmeans` (it may take longer than usual for the program to load the data on your first try). The program will report the total runtime of the algorithm on the data.
+2.  Run `pip install -r requirements.txt` to download the necessary plotting packages. Next, try running `python3 plot.py` which will generate the files "start.png" and "end.png" from the logs ("start.log" and "end.log") generated from running `kmeans`. These files will be in the current directory and should look similar to the above images. __Warning: You might notice that not all points are assigned to the "closest" centroid. This is okay.__ (For those that want to understand why: We project 100-dimensional datapoints down to 2-D using [PCA](https://en.wikipedia.org/wiki/Principal_component_analysis) to produce these visualizations. Therefore, while the 100-D datapoint is near the appropriate centroid in high dimensional space, the projects of the datapoint and the centroid may not be close to each other in 2-D.). As long as the clustering looks "reasonable" (use the images produced by the starter code in step 2 as a reference) and most points appear to be assigned to the clostest centroid, the code remains correct.
+3.  Utilize the timing function in `common/CycleTimer.h` to determine where in the code there are performance bottlenecks. You will need to call `CycleTimer::currentSeconds()`, which returns the current time (in seconds) as a floating point number. Where is most of the time being spent in the code?
+4.  Based on your findings from the previous step, improve the implementation. We are looking for a speedup of about 2.1x or more (i.e $\frac{oldRuntime}{newRuntime} >= 2.1$). Please explain how you arrived at your solution, as well as what your final solution is and the associated speedup. The writeup of this process should describe a sequence of steps. We expect something of the form "I measured ... which let me to believe X. So to improve things I tried ... resulting in a speedup/slowdown of ...".
+  
+Constraints:
+- You may only modify code in `kmeansThread.cpp`. You are not allowed to modify the `stoppingConditionMet` function and you cannot change the interface to `kMeansThread`, but anything is fair game (e.g. you can add new members to the `WorkerArgs` struct, rewrite functions, allocate new arrays, etc.). However...
+- **Make sure you do not change the functionality of the implementation! If the algorithm doesn't converge or the result from running `python3 plot.py` does not look like what's produced by the starter code, something is wrong!** For example, you cannot simply remove the main "while" loop or change the semantics of the `dist` function, since this would yield incorrect results.
+- __Important:__ you may only parallelize __one__ of the following functions: `dist`, `computeAssignments`, `computeCentroids`, `computeCost`. For an example of how to write parallel code using `std::thread`, see `prog1_mandelbrot_threads/mandelbrotThread.cpp`.
+  
+Tips / Notes: 
+- This problem should not require a significant amount of coding. Our solution modified/added around 20-25 lines of code.
+- Once you've used timers to isolate hotspots, to improve the code make sure you understand the relative sizes of K, M, and N.
+- Try to prioritize code improvements with the potential for high returns and think about the different axes of parallelism available in the problem and how you may take advantage of them.
+- **The objective of this program is to give you more practice with learning how to profile and debug performance oriented programs. Even if you don't hit the performance target, if you demonstrate good/thoughtful debugging skills in the writeup you'll still get most of the points.**
+
+
+## For the Curious (highly recommended) ##
+
+Want to know about ISPC and how it was created? One of the two creators of ISPC, Matt Pharr, wrote an __amazing blog post__ on the history of its development called [The story of ispc](https://pharr.org/matt/blog/2018/04/30/ispc-all).  It really touches on many issues of parallel system design -- in particular the value of limited scope vs general programming languages.  IMHO it's a must read for CS149 students!
+
+## Hand-in Instructions ##
+
+Handin will be performed via [Gradescope](https://www.gradescope.com). Only one handin per group is required. However, please make sure that you add your partner's name to the gradescope submission. There is one place you will need to turn in the files on Gradescope: `Assignment 1 (Write-Up)`. Do not submit code related to running locally to Gradescope, as we will only run code on Myth machines. Please paste your Mac findings after the Myth write up. 
+
+## Resources and Notes ##
+
+-  Extensive ISPC documentation and examples can be found at
+  <http://ispc.github.io/>
+-  Zooming into different locations of the mandelbrot image can be quite
+  fascinating
+-  Arm provides a lot of supporting material about Neon vector instructions at 
+  <https://developer.arm.com/architectures/instruction-sets/intrinsics/>.  
+
+
+
+
+================================================
+FILE: common/CycleTimer.h
+================================================
+#ifndef SYRAH_CYCLE_TIMER_H_
+#define SYRAH_CYCLE_TIMER_H_
+
+#include <chrono>
+#include <cstdint>
+
+class CycleTimer {
+ public:
+  using SysClock = std::uint64_t;
+  using Clock = std::chrono::steady_clock;
+  using Seconds = std::chrono::duration<double>;
+
+  // Returns seconds elapsed since the first call, using a monotonic clock.
+  // Thread-safe since C++11 (static local initialization is thread-safe).
+  static inline double currentSeconds() {
+    static const Clock::time_point t0 = Clock::now();
+    return Seconds{Clock::now() - t0}.count();
+  }
+
+  // Utility class: no instances.
+  CycleTimer() = delete;
+  ~CycleTimer() = delete;
+  CycleTimer(const CycleTimer&) = delete;
+  CycleTimer& operator=(const CycleTimer&) = delete;
+};
+
+#endif  // SYRAH_CYCLE_TIMER_H_
+
+
+================================================
+FILE: common/ppm.cpp
+================================================
+#include <stdlib.h>
+#include <stdio.h>
+#include <math.h>
+#include <algorithm>
+
+
+
+void
+writePPMImage(int* data, int width, int height, const char *filename, int maxIterations)
+{
+    FILE *fp = fopen(filename, "wb");
+
+    // write ppm header
+    fprintf(fp, "P6\n");
+    fprintf(fp, "%d %d\n", width, height);
+    fprintf(fp, "255\n");
+
+    for (int i = 0; i < width*height; ++i) {
+
+        // Clamp iteration count for this pixel, then scale the value
+        // to 0-1 range.  Raise resulting value to a power (<1) to
+        // increase brightness of low iteration count
+        // pixels. a.k.a. Make things look cooler.
+
+        float mapped = pow( std::min(static_cast<float>(maxIterations),
+                                     static_cast<float>(data[i])) / 256.f, .5f);
+
+        // convert back into 0-255 range, 8-bit channels
+        unsigned char result = static_cast<unsigned char>(255.f * mapped);
+        for (int j = 0; j < 3; ++j)
+            fputc(result, fp);
+    }
+    fclose(fp);
+    printf("Wrote image file %s\n", filename);
+}
+
+
+
+================================================
+FILE: common/tasksys.cpp
+================================================
+/*
+  Copyright (c) 2011-2023, Intel Corporation
+
+  SPDX-License-Identifier: BSD-3-Clause
+*/
+
+/*
+  This file implements simple task systems that provide the three
+  entrypoints used by ispc-generated to code to handle 'launch' and 'sync'
+  statements in ispc programs.  See the section "Task Parallelism: Language
+  Syntax" in the ispc documentation for information about using task
+  parallelism in ispc programs, and see the section "Task Parallelism:
+  Runtime Requirements" for information about the task-related entrypoints
+  that are implemented here.
+
+  There are several task systems in this file, built using:
+    - Microsoft's Concurrency Runtime (ISPC_USE_CONCRT)
+    - Apple's Grand Central Dispatch (ISPC_USE_GCD)
+    - bare pthreads (ISPC_USE_PTHREADS, ISPC_USE_PTHREADS_FULLY_SUBSCRIBED)
+    - TBB (ISPC_USE_TBB_TASK_GROUP, ISPC_USE_TBB_PARALLEL_FOR)
+    - OpenMP (ISPC_USE_OMP)
+    - HPX (ISPC_USE_HPX)
+
+  The task system implementation can be selected at compile time, by defining
+  the appropriate preprocessor symbol on the command line (for e.g.: -D ISPC_USE_TBB).
+  Not all combinations of platform and task system are meaningful.
+  If no task system is requested, a reasonable default task system for the platform
+  is selected.  Here are the task systems that can be selected:
+
+#define ISPC_USE_GCD
+#define ISPC_USE_CONCRT
+#define ISPC_USE_PTHREADS
+#define ISPC_USE_PTHREADS_FULLY_SUBSCRIBED
+#define ISPC_USE_OMP
+#define ISPC_USE_TBB_TASK_GROUP
+#define ISPC_USE_TBB_PARALLEL_FOR
+
+  The ISPC_USE_PTHREADS_FULLY_SUBSCRIBED model essentially takes over the machine
+  by assigning one pthread to each hyper-thread, and then uses spinlocks and atomics
+  for task management.  This model is useful for KNC where tasks can take over
+  the machine, but less so when there are other tasks that need running on the machine.
+
+#define ISPC_USE_CREW
+#define ISPC_USE_HPX
+  The HPX model requires the HPX runtime environment to be set up. This can be
+  done manually, e.g. with hpx::init, or by including hpx/hpx_main.hpp which
+  uses the main() function as entry point and sets up the runtime system.
+  Number of threads can be specified as commandline parameter with
+  --hpx:threads, use "all" to spawn one thread per processing unit.
+
+*/
+
+#if !(defined ISPC_USE_CONCRT || defined ISPC_USE_GCD || defined ISPC_USE_PTHREADS ||                                  \
+      defined ISPC_USE_PTHREADS_FULLY_SUBSCRIBED || defined ISPC_USE_TBB_TASK_GROUP ||                                 \
+      defined ISPC_USE_TBB_PARALLEL_FOR || defined ISPC_USE_OMP || defined ISPC_USE_HPX)
+
+// If no task model chosen from the compiler cmdline, pick a reasonable default
+#if defined(_WIN32) || defined(_WIN64)
+#define ISPC_USE_CONCRT
+#elif defined(__linux__) || defined(__FreeBSD__)
+#define ISPC_USE_PTHREADS
+#elif defined(__APPLE__)
+#define ISPC_USE_GCD
+//#define ISPC_USE_PTHREADS
+#endif
+#endif // No task model specified on compiler cmdline
+
+#if defined(_WIN32) || defined(_WIN64)
+#define ISPC_IS_WINDOWS
+#elif defined(__linux__) || defined(__FreeBSD__) // pretty much the same for these purposes
+#define ISPC_IS_LINUX
+#elif defined(__APPLE__)
+#define ISPC_IS_APPLE
+#endif
+
+#define DBG(x)
+
+#ifdef ISPC_IS_WINDOWS
+#define NOMINMAX
+#include <windows.h>
+#endif // ISPC_IS_WINDOWS
+#ifdef ISPC_USE_CONCRT
+#include <concrt.h>
+using namespace Concurrency;
+#endif // ISPC_USE_CONCRT
+#ifdef ISPC_USE_GCD
+#include <dispatch/dispatch.h>
+#include <pthread.h>
+#endif // ISPC_USE_GCD
+#ifdef ISPC_USE_PTHREADS
+#include <algorithm>
+#include <errno.h>
+#include <fcntl.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <sys/param.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <vector>
+#endif // ISPC_USE_PTHREADS
+#ifdef ISPC_USE_PTHREADS_FULLY_SUBSCRIBED
+#include <algorithm>
+#include <errno.h>
+#include <fcntl.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <sys/param.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <vector>
+//#include <stdexcept>
+#include <stack>
+#endif // ISPC_USE_PTHREADS_FULLY_SUBSCRIBED
+#ifdef ISPC_USE_TBB_PARALLEL_FOR
+#include <tbb/parallel_for.h>
+#endif // ISPC_USE_TBB_PARALLEL_FOR
+#ifdef ISPC_USE_TBB_TASK_GROUP
+#include <tbb/task_group.h>
+#endif // ISPC_USE_TBB_TASK_GROUP
+#ifdef ISPC_USE_OMP
+#include <omp.h>
+#endif // ISPC_USE_OMP
+#ifdef ISPC_USE_HPX
+#include <hpx/include/async.hpp>
+#include <hpx/lcos/wait_all.hpp>
+#endif // ISPC_USE_HPX
+#ifdef ISPC_IS_LINUX
+#include <stdlib.h>
+#endif // ISPC_IS_LINUX
+
+#include <algorithm>
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+// Signature of ispc-generated 'task' functions
+typedef void (*TaskFuncType)(void *data, int threadIndex, int threadCount, int taskIndex, int taskCount, int taskIndex0,
+                             int taskIndex1, int taskIndex2, int taskCount0, int taskCount1, int taskCount2);
+
+// Small structure used to hold the data for each task
+struct TaskInfo {
+    TaskFuncType func;
+    void *data;
+    int taskIndex;
+    int taskCount3d[3];
+#if defined(ISPC_USE_CONCRT)
+    event taskEvent;
+#endif
+    int taskCount() const { return taskCount3d[0] * taskCount3d[1] * taskCount3d[2]; }
+    int taskIndex0() const { return taskIndex % taskCount3d[0]; }
+    int taskIndex1() const { return (taskIndex / taskCount3d[0]) % taskCount3d[1]; }
+    int taskIndex2() const { return taskIndex / (taskCount3d[0] * taskCount3d[1]); }
+    int taskCount0() const { return taskCount3d[0]; }
+    int taskCount1() const { return taskCount3d[1]; }
+    int taskCount2() const { return taskCount3d[2]; }
+    TaskInfo() {}
+};
+
+// ispc expects these functions to have C linkage / not be mangled
+extern "C" {
+void ISPCLaunch(void **handlePtr, void *f, void *data, int countx, int county, int countz);
+void *ISPCAlloc(void **handlePtr, int64_t size, int32_t alignment);
+void ISPCSync(void *handle);
+}
+
+///////////////////////////////////////////////////////////////////////////
+// TaskGroupBase
+
+#define LOG_TASK_QUEUE_CHUNK_SIZE 14
+#define MAX_TASK_QUEUE_CHUNKS 128
+#define TASK_QUEUE_CHUNK_SIZE (1 << LOG_TASK_QUEUE_CHUNK_SIZE)
+
+#define MAX_LAUNCHED_TASKS (MAX_TASK_QUEUE_CHUNKS * TASK_QUEUE_CHUNK_SIZE)
+
+#define NUM_MEM_BUFFERS 16
+
+class TaskGroup;
+
+/** The TaskGroupBase structure provides common functionality for "task
+    groups"; a task group is the set of tasks launched from within a single
+    ispc function.  When the function is ready to return, it waits for all
+    of the tasks in its task group to finish before it actually returns.
+ */
+class TaskGroupBase {
+  public:
+    void Reset();
+
+    int AllocTaskInfo(int count);
+    TaskInfo *GetTaskInfo(int index);
+
+    void *AllocMemory(int64_t size, int32_t alignment);
+
+  protected:
+    TaskGroupBase();
+    ~TaskGroupBase();
+
+    int nextTaskInfoIndex;
+
+  private:
+    /* We allocate blocks of TASK_QUEUE_CHUNK_SIZE TaskInfo structures as
+       needed by the calling function.  We hold up to MAX_TASK_QUEUE_CHUNKS
+       of these (and then exit at runtime if more than this many tasks are
+       launched.)
+     */
+    TaskInfo *taskInfo[MAX_TASK_QUEUE_CHUNKS];
+
+    /* We also allocate chunks of memory to service ISPCAlloc() calls.  The
+       memBuffers[] array holds pointers to this memory.  The first element
+       of this array is initialized to point to mem and then any subsequent
+       elements required are initialized with dynamic allocation.
+     */
+    int curMemBuffer, curMemBufferOffset;
+    int memBufferSize[NUM_MEM_BUFFERS];
+    char *memBuffers[NUM_MEM_BUFFERS];
+    char mem[256];
+};
+
+inline TaskGroupBase::TaskGroupBase() {
+    nextTaskInfoIndex = 0;
+
+    curMemBuffer = 0;
+    curMemBufferOffset = 0;
+    memBuffers[0] = mem;
+    memBufferSize[0] = sizeof(mem) / sizeof(mem[0]);
+    for (int i = 1; i < NUM_MEM_BUFFERS; ++i) {
+        memBuffers[i] = nullptr;
+        memBufferSize[i] = 0;
+    }
+
+    for (int i = 0; i < MAX_TASK_QUEUE_CHUNKS; ++i)
+        taskInfo[i] = nullptr;
+}
+
+inline TaskGroupBase::~TaskGroupBase() {
+    // Note: don't delete memBuffers[0], since it points to the start of
+    // the "mem" member!
+    for (int i = 1; i < NUM_MEM_BUFFERS; ++i)
+        delete[](memBuffers[i]);
+}
+
+inline void TaskGroupBase::Reset() {
+    nextTaskInfoIndex = 0;
+    curMemBuffer = 0;
+    curMemBufferOffset = 0;
+}
+
+inline int TaskGroupBase::AllocTaskInfo(int count) {
+    int ret = nextTaskInfoIndex;
+    nextTaskInfoIndex += count;
+    return ret;
+}
+
+inline TaskInfo *TaskGroupBase::GetTaskInfo(int index) {
+    int chunk = (index >> LOG_TASK_QUEUE_CHUNK_SIZE);
+    int offset = index & (TASK_QUEUE_CHUNK_SIZE - 1);
+
+    if (chunk == MAX_TASK_QUEUE_CHUNKS) {
+        fprintf(stderr,
+                "A total of %d tasks have been launched from the "
+                "current function--the simple built-in task system can handle "
+                "no more. You can increase the values of TASK_QUEUE_CHUNK_SIZE "
+                "and LOG_TASK_QUEUE_CHUNK_SIZE to work around this limitation.  "
+                "Sorry!  Exiting.\n",
+                index);
+        exit(1);
+    }
+
+    if (taskInfo[chunk] == nullptr)
+        taskInfo[chunk] = new TaskInfo[TASK_QUEUE_CHUNK_SIZE];
+    return &taskInfo[chunk][offset];
+}
+
+inline void *TaskGroupBase::AllocMemory(int64_t size, int32_t alignment) {
+    char *basePtr = memBuffers[curMemBuffer];
+    intptr_t iptr = (intptr_t)(basePtr + curMemBufferOffset);
+    iptr = (iptr + (alignment - 1)) & ~(alignment - 1);
+
+    int newOffset = int(iptr - (intptr_t)basePtr + size);
+    if (newOffset < memBufferSize[curMemBuffer]) {
+        curMemBufferOffset = newOffset;
+        return (char *)iptr;
+    }
+
+    ++curMemBuffer;
+    curMemBufferOffset = 0;
+    assert(curMemBuffer < NUM_MEM_BUFFERS);
+
+    int allocSize = 1 << (12 + curMemBuffer);
+    allocSize = std::max(int(size + alignment), allocSize);
+    char *newBuf = new char[allocSize];
+    memBufferSize[curMemBuffer] = allocSize;
+    memBuffers[curMemBuffer] = newBuf;
+    return AllocMemory(size, alignment);
+}
+
+///////////////////////////////////////////////////////////////////////////
+// Atomics and the like
+
+static inline void lMemFence() {
+    // Windows atomic functions already contain the fence
+#if !defined ISPC_IS_WINDOWS
+    __sync_synchronize();
+#endif
+}
+
+static void *lAtomicCompareAndSwapPointer(void **v, void *newValue, void *oldValue) {
+#ifdef ISPC_IS_WINDOWS
+    return InterlockedCompareExchangePointer(v, newValue, oldValue);
+#else
+    void *result = __sync_val_compare_and_swap(v, oldValue, newValue);
+    lMemFence();
+    return result;
+#endif // ISPC_IS_WINDOWS
+}
+
+static int32_t lAtomicCompareAndSwap32(volatile int32_t *v, int32_t newValue, int32_t oldValue) {
+#ifdef ISPC_IS_WINDOWS
+    return InterlockedCompareExchange((volatile LONG *)v, newValue, oldValue);
+#else
+    int32_t result = __sync_val_compare_and_swap(v, oldValue, newValue);
+    lMemFence();
+    return result;
+#endif // ISPC_IS_WINDOWS
+}
+
+#ifndef ISPC_USE_GCD
+static inline int32_t lAtomicAdd(volatile int32_t *v, int32_t delta) {
+#ifdef ISPC_IS_WINDOWS
+    return InterlockedExchangeAdd((volatile LONG *)v, delta) + delta;
+#else
+    return __sync_fetch_and_add(v, delta);
+#endif
+}
+#endif
+
+///////////////////////////////////////////////////////////////////////////
+
+#ifdef ISPC_USE_CONCRT
+// With ConcRT, we don't need to extend TaskGroupBase at all.
+class TaskGroup : public TaskGroupBase {
+  public:
+    void Launch(int baseIndex, int count);
+    void Sync();
+};
+#endif // ISPC_USE_CONCRT
+
+#ifdef ISPC_USE_GCD
+/* With Grand Central Dispatch, we associate a GCD dispatch group with each
+   task group.  (We'll later wait on this dispatch group when we need to
+   wait on all of the tasks in the group to finish.)
+ */
+class TaskGroup : public TaskGroupBase {
+  public:
+    TaskGroup() { gcdGroup = dispatch_group_create(); }
+
+    void Launch(int baseIndex, int count);
+    void Sync();
+
+  private:
+    dispatch_group_t gcdGroup;
+};
+#endif // ISPC_USE_GCD
+
+#ifdef ISPC_USE_PTHREADS
+static void *lTaskEntry(void *arg);
+
+class TaskGroup : public TaskGroupBase {
+  public:
+    TaskGroup() {
+        numUnfinishedTasks = 0;
+        waitingTasks.reserve(128);
+        inActiveList = false;
+    }
+
+    void Reset() {
+        TaskGroupBase::Reset();
+        numUnfinishedTasks = 0;
+        assert(inActiveList == false);
+        lMemFence();
+    }
+
+    void Launch(int baseIndex, int count);
+    void Sync();
+
+  private:
+    friend void *lTaskEntry(void *arg);
+
+    int32_t numUnfinishedTasks;
+    int32_t pad[3];
+    std::vector<int> waitingTasks;
+    bool inActiveList;
+};
+
+#endif // ISPC_USE_PTHREADS
+
+#ifdef ISPC_USE_OMP
+
+class TaskGroup : public TaskGroupBase {
+  public:
+    void Launch(int baseIndex, int count);
+    void Sync();
+};
+
+#endif // ISPC_USE_OMP
+
+#ifdef ISPC_USE_TBB_PARALLEL_FOR
+
+class TaskGroup : public TaskGroupBase {
+  public:
+    void Launch(int baseIndex, int count);
+    void Sync();
+};
+
+#endif // ISPC_USE_TBB_PARALLEL_FOR
+
+#ifdef ISPC_USE_TBB_TASK_GROUP
+
+class TaskGroup : public TaskGroupBase {
+  public:
+    void Launch(int baseIndex, int count);
+    void Sync();
+
+  private:
+    tbb::task_group tbbTaskGroup;
+};
+
+#endif // ISPC_USE_TBB_TASK_GROUP
+
+#ifdef ISPC_USE_HPX
+
+class TaskGroup : public TaskGroupBase {
+  public:
+    void Launch(int baseIndex, int count);
+    void Sync();
+
+  private:
+    std::vector<hpx::future<void>> futures;
+};
+
+#endif // ISPC_USE_HPX
+
+///////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////
+// Grand Central Dispatch
+
+#ifdef ISPC_USE_GCD
+
+/* A simple task system for ispc programs based on Apple's Grand Central
+   Dispatch. */
+
+static dispatch_queue_t gcdQueue;
+static volatile int32_t lock = 0;
+
+static void InitTaskSystem() {
+    if (gcdQueue != nullptr)
+        return;
+
+    while (1) {
+        if (lAtomicCompareAndSwap32(&lock, 1, 0) == 0) {
+            if (gcdQueue == nullptr) {
+                gcdQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
+                assert(gcdQueue != nullptr);
+                lMemFence();
+            }
+            lock = 0;
+            break;
+        }
+    }
+}
+
+static void lRunTask(void *ti) {
+    TaskInfo *taskInfo = (TaskInfo *)ti;
+    // FIXME: these are bogus values; may cause bugs in code that depends
+    // on them having unique values in different threads.
+    int threadIndex = 0;
+    int threadCount = 1;
+
+    // Actually run the task
+    taskInfo->func(taskInfo->data, threadIndex, threadCount, taskInfo->taskIndex, taskInfo->taskCount(),
+                   taskInfo->taskIndex0(), taskInfo->taskIndex1(), taskInfo->taskIndex2(), taskInfo->taskCount0(),
+                   taskInfo->taskCount1(), taskInfo->taskCount2());
+}
+
+inline void TaskGroup::Launch(int baseIndex, int count) {
+    for (int i = 0; i < count; ++i) {
+        TaskInfo *ti = GetTaskInfo(baseIndex + i);
+        dispatch_group_async_f(gcdGroup, gcdQueue, ti, lRunTask);
+    }
+}
+
+inline void TaskGroup::Sync() { dispatch_group_wait(gcdGroup, DISPATCH_TIME_FOREVER); }
+
+#endif // ISPC_USE_GCD
+
+///////////////////////////////////////////////////////////////////////////
+// Concurrency Runtime
+
+#ifdef ISPC_USE_CONCRT
+
+static void InitTaskSystem() {
+    // No initialization needed
+}
+
+static void __cdecl lRunTask(LPVOID param) {
+    TaskInfo *ti = (TaskInfo *)param;
+
+    // Actually run the task.
+    // FIXME: like the GCD implementation for OS X, this is passing bogus
+    // values for the threadIndex and threadCount builtins, which in turn
+    // will cause bugs in code that uses those.
+    int threadIndex = 0;
+    int threadCount = 1;
+    ti->func(ti->data, threadIndex, threadCount, ti->taskIndex, ti->taskCount(), ti->taskIndex0(), ti->taskIndex1(),
+             ti->taskIndex2(), ti->taskCount0(), ti->taskCount1(), ti->taskCount2());
+
+    // Signal the event that this task is done
+    ti->taskEvent.set();
+}
+
+inline void TaskGroup::Launch(int baseIndex, int count) {
+    for (int i = 0; i < count; ++i)
+        CurrentScheduler::ScheduleTask(lRunTask, GetTaskInfo(baseIndex + i));
+}
+
+inline void TaskGroup::Sync() {
+    for (int i = 0; i < nextTaskInfoIndex; ++i) {
+        TaskInfo *ti = GetTaskInfo(i);
+        ti->taskEvent.wait();
+        ti->taskEvent.reset();
+    }
+}
+
+#endif // ISPC_USE_CONCRT
+
+///////////////////////////////////////////////////////////////////////////
+// pthreads
+
+#ifdef ISPC_USE_PTHREADS
+
+static volatile int32_t lock = 0;
+
+static int nThreads;
+static pthread_t *threads = nullptr;
+
+static pthread_mutex_t taskSysMutex;
+static std::vector<TaskGroup *> activeTaskGroups;
+static sem_t *workerSemaphore;
+
+static void *lTaskEntry(void *arg) {
+    int threadIndex = (int)((int64_t)arg);
+    int threadCount = nThreads;
+
+    while (1) {
+        int err;
+        //
+        // Wait on the semaphore until we're woken up due to the arrival of
+        // more work.
+        //
+        if ((err = sem_wait(workerSemaphore)) != 0) {
+            fprintf(stderr, "Error from sem_wait: %s\n", strerror(err));
+            exit(1);
+        }
+
+        //
+        // Acquire the mutex
+        //
+        if ((err = pthread_mutex_lock(&taskSysMutex)) != 0) {
+            fprintf(stderr, "Error from pthread_mutex_lock: %s\n", strerror(err));
+            exit(1);
+        }
+
+        if (activeTaskGroups.size() == 0) {
+            //
+            // Task queue is empty, go back and wait on the semaphore
+            //
+            if ((err = pthread_mutex_unlock(&taskSysMutex)) != 0) {
+                fprintf(stderr, "Error from pthread_mutex_unlock: %s\n", strerror(err));
+                exit(1);
+            }
+            continue;
+        }
+
+        //
+        // Get the last task group on the active list and the last task
+        // from its waiting tasks list.
+        //
+        TaskGroup *tg = activeTaskGroups.back();
+        assert(tg->waitingTasks.size() > 0);
+        int taskNumber = tg->waitingTasks.back();
+        tg->waitingTasks.pop_back();
+
+        if (tg->waitingTasks.size() == 0) {
+            // We just took the last task from this task group, so remove
+            // it from the active list.
+            activeTaskGroups.pop_back();
+            tg->inActiveList = false;
+        }
+
+        if ((err = pthread_mutex_unlock(&taskSysMutex)) != 0) {
+            fprintf(stderr, "Error from pthread_mutex_unlock: %s\n", strerror(err));
+            exit(1);
+        }
+
+        //
+        // And now actually run the task
+        //
+        DBG(fprintf(stderr, "running task %d from group %p\n", taskNumber, tg));
+        TaskInfo *myTask = tg->GetTaskInfo(taskNumber);
+        myTask->func(myTask->data, threadIndex, threadCount, myTask->taskIndex, myTask->taskCount(),
+                     myTask->taskIndex0(), myTask->taskIndex1(), myTask->taskIndex2(), myTask->taskCount0(),
+                     myTask->taskCount1(), myTask->taskCount2());
+
+        //
+        // Decrement the "number of unfinished tasks" counter in the task
+        // group.
+        //
+        lMemFence();
+        lAtomicAdd(&tg->numUnfinishedTasks, -1);
+    }
+
+    pthread_exit(nullptr);
+    return 0;
+}
+
+static void InitTaskSystem() {
+    if (threads == nullptr) {
+        while (1) {
+            if (lAtomicCompareAndSwap32(&lock, 1, 0) == 0) {
+                if (threads == nullptr) {
+                    // We launch one fewer thread than there are cores,
+                    // since the main thread here will also grab jobs from
+                    // the task queue itself.
+                    nThreads = sysconf(_SC_NPROCESSORS_ONLN) - 1;
+
+                    int err;
+                    if ((err = pthread_mutex_init(&taskSysMutex, nullptr)) != 0) {
+                        fprintf(stderr, "Error creating mutex: %s\n", strerror(err));
+                        exit(1);
+                    }
+
+                    constexpr std::size_t FILENAME_MAX_LEN{1024UL};
+                    char name[FILENAME_MAX_LEN];
+                    bool success = false;
+                    srand(time(nullptr));
+                    for (int i = 0; i < 10; i++) {
+                        // Some platforms (e.g. FreeBSD) require the name to begin with a slash
+                        snprintf(name, FILENAME_MAX_LEN, "/ispc_task.%d.%d", static_cast<int>(getpid()), static_cast<int>(rand()));
+                        workerSemaphore = sem_open(name, O_CREAT, S_IRUSR | S_IWUSR, 0);
+                        if (workerSemaphore != SEM_FAILED) {
+                            success = true;
+                            break;
+                        }
+                        fprintf(stderr, "Failed to create %s\n", name);
+                    }
+
+                    if (!success) {
+                        fprintf(stderr, "Error creating semaphore (%s): %s\n", name, strerror(errno));
+                        exit(1);
+                    }
+
+                    threads = (pthread_t *)malloc(nThreads * sizeof(pthread_t));
+                    if (threads == nullptr) {
+                        fprintf(stderr, "Error creating pthreads: %s\n", strerror(err));
+                        exit(1);
+                    }
+
+                    for (int i = 0; i < nThreads; ++i) {
+                        err = pthread_create(&threads[i], nullptr, &lTaskEntry, (void *)((long long)i));
+                        if (err != 0) {
+                            fprintf(stderr, "Error creating pthread %d: %s\n", i, strerror(err));
+                            exit(1);
+                        }
+                    }
+
+                    activeTaskGroups.reserve(64);
+                }
+
+                // Make sure all of the above goes to memory before we
+                // clear the lock.
+                lMemFence();
+                lock = 0;
+                break;
+            }
+        }
+    }
+}
+
+inline void TaskGroup::Launch(int baseCoord, int count) {
+    //
+    // Acquire mutex, add task
+    //
+    int err;
+    if ((err = pthread_mutex_lock(&taskSysMutex)) != 0) {
+        fprintf(stderr, "Error from pthread_mutex_lock: %s\n", strerror(err));
+        exit(1);
+    }
+
+    // Add the corresponding set of tasks to the waiting-to-be-run list for
+    // this task group.
+    //
+    // FIXME: it's a little ugly to hold a global mutex for this when we
+    // only need to make sure no one else is accessing this task group's
+    // waitingTasks list.  (But a small experiment in switching to a
+    // per-TaskGroup mutex showed worse performance!)
+    for (int i = 0; i < count; ++i)
+        waitingTasks.push_back(baseCoord + i);
+
+    // Add the task group to the global active list if it isn't there
+    // already.
+    if (inActiveList == false) {
+        activeTaskGroups.push_back(this);
+        inActiveList = true;
+    }
+
+    if ((err = pthread_mutex_unlock(&taskSysMutex)) != 0) {
+        fprintf(stderr, "Error from pthread_mutex_unlock: %s\n", strerror(err));
+        exit(1);
+    }
+
+    //
+    // Update the count of the number of tasks left to run in this task
+    // group.
+    //
+    lMemFence();
+    lAtomicAdd(&numUnfinishedTasks, count);
+
+    //
+    // Post to the worker semaphore to wake up worker threads that are
+    // sleeping waiting for tasks to show up
+    //
+    for (int i = 0; i < count; ++i)
+        if ((err = sem_post(workerSemaphore)) != 0) {
+            fprintf(stderr, "Error from sem_post: %s\n", strerror(err));
+            exit(1);
+        }
+}
+
+inline void TaskGroup::Sync() {
+    DBG(fprintf(stderr, "syncing %p - %d unfinished\n", tg, numUnfinishedTasks));
+
+    while (numUnfinishedTasks > 0) {
+        // All of the tasks in this group aren't finished yet.  We'll try
+        // to help out here since we don't have anything else to do...
+
+        DBG(fprintf(stderr, "while syncing %p - %d unfinished\n", tg, numUnfinishedTasks));
+
+        //
+        // Acquire the global task system mutex to grab a task to work on
+        //
+        int err;
+        if ((err = pthread_mutex_lock(&taskSysMutex)) != 0) {
+            fprintf(stderr, "Error from pthread_mutex_lock: %s\n", strerror(err));
+            exit(1);
+        }
+
+        TaskInfo *myTask = nullptr;
+        TaskGroup *runtg = this;
+        if (waitingTasks.size() > 0) {
+            int taskNumber = waitingTasks.back();
+            waitingTasks.pop_back();
+
+            if (waitingTasks.size() == 0) {
+                // There's nothing left to start running from this group,
+                // so remove it from the active task list.
+                activeTaskGroups.erase(std::find(activeTaskGroups.begin(), activeTaskGroups.end(), this));
+                inActiveList = false;
+            }
+            myTask = GetTaskInfo(taskNumber);
+            DBG(fprintf(stderr, "running task %d from group %p in sync\n", taskNumber, tg));
+        } else {
+            // Other threads are already working on all of the tasks in
+            // this group, so we can't help out by running one ourself.
+            // We'll try to run one from another group to make ourselves
+            // useful here.
+            if (activeTaskGroups.size() == 0) {
+                // No active task groups left--there's nothing for us to do.
+                if ((err = pthread_mutex_unlock(&taskSysMutex)) != 0) {
+                    fprintf(stderr, "Error from pthread_mutex_unlock: %s\n", strerror(err));
+                    exit(1);
+                }
+                // FIXME: We basically end up busy-waiting here, which is
+                // extra wasteful in a world with hyper-threading.  It would
+                // be much better to put this thread to sleep on a
+                // condition variable that was signaled when the last task
+                // in this group was finished.
+                usleep(1);
+                continue;
+            }
+
+            // Get a task to run from another task group.
+            runtg = activeTaskGroups.back();
+            assert(runtg->waitingTasks.size() > 0);
+
+            int taskNumber = runtg->waitingTasks.back();
+            runtg->waitingTasks.pop_back();
+            if (runtg->waitingTasks.size() == 0) {
+                // There's left to start running from this group, so remove
+                // it from the active task list.
+                activeTaskGroups.pop_back();
+                runtg->inActiveList = false;
+            }
+            myTask = runtg->GetTaskInfo(taskNumber);
+            DBG(fprintf(stderr, "running task %d from other group %p in sync\n", taskNumber, runtg));
+        }
+
+        if ((err = pthread_mutex_unlock(&taskSysMutex)) != 0) {
+            fprintf(stderr, "Error from pthread_mutex_unlock: %s\n", strerror(err));
+            exit(1);
+        }
+
+        //
+        // Do work for _myTask_
+        //
+        // FIXME: bogus values for thread index/thread count here as well..
+        myTask->func(myTask->data, 0, 1, myTask->taskIndex, myTask->taskCount(), myTask->taskIndex0(),
+                     myTask->taskIndex1(), myTask->taskIndex2(), myTask->taskCount0(), myTask->taskCount1(),
+                     myTask->taskCount2());
+
+        //
+        // Decrement the number of unfinished tasks counter
+        //
+        lMemFence();
+        lAtomicAdd(&runtg->numUnfinishedTasks, -1);
+    }
+    DBG(fprintf(stderr, "sync for %p done!n", tg));
+}
+
+#endif // ISPC_USE_PTHREADS
+
+///////////////////////////////////////////////////////////////////////////
+// OpenMP
+
+#ifdef ISPC_USE_OMP
+
+static void InitTaskSystem() {
+    // No initialization needed
+}
+
+inline void TaskGroup::Launch(int baseIndex, int count) {
+#pragma omp parallel
+    {
+        const int threadIndex = omp_get_thread_num();
+        const int threadCount = omp_get_num_threads();
+
+#pragma omp for schedule(runtime)
+        for (int i = 0; i < count; i++) {
+            TaskInfo *ti = GetTaskInfo(baseIndex + i);
+
+            // Actually run the task.
+            ti->func(ti->data, threadIndex, threadCount, ti->taskIndex, ti->taskCount(), ti->taskIndex0(),
+                     ti->taskIndex1(), ti->taskIndex2(), ti->taskCount0(), ti->taskCount1(), ti->taskCount2());
+        }
+    }
+}
+
+inline void TaskGroup::Sync() {}
+
+#endif // ISPC_USE_OMP
+
+///////////////////////////////////////////////////////////////////////////
+// Thread Building Blocks
+
+#ifdef ISPC_USE_TBB_PARALLEL_FOR
+
+static void InitTaskSystem() {
+    // No initialization needed by default
+    // tbb::task_scheduler_init();
+}
+
+inline void TaskGroup::Launch(int baseIndex, int count) {
+    tbb::parallel_for(0, count, [=](int i) {
+        TaskInfo *ti = GetTaskInfo(baseIndex + i);
+
+        // Actually run the task.
+        // TBB does not expose the task -> thread mapping so we pretend it's 1:1
+        int threadIndex = ti->taskIndex;
+        int threadCount = ti->taskCount();
+
+        ti->func(ti->data, threadIndex, threadCount, ti->taskIndex, ti->taskCount(), ti->taskIndex0(), ti->taskIndex1(),
+                 ti->taskIndex2(), ti->taskCount0(), ti->taskCount1(), ti->taskCount2());
+    });
+}
+
+inline void TaskGroup::Sync() {}
+
+#endif // ISPC_USE_TBB_PARALLEL_FOR
+
+#ifdef ISPC_USE_TBB_TASK_GROUP
+
+static void InitTaskSystem() {
+    // No initialization needed by default
+    // tbb::task_scheduler_init();
+}
+
+inline void TaskGroup::Launch(int baseIndex, int count) {
+    for (int i = 0; i < count; i++) {
+        tbbTaskGroup.run([=]() {
+            TaskInfo *ti = GetTaskInfo(baseIndex + i);
+
+            // TBB does not expose the task -> thread mapping so we pretend it's 1:1
+            int threadIndex = ti->taskIndex;
+            int threadCount = ti->taskCount();
+            ti->func(ti->data, threadIndex, threadCount, ti->taskIndex, ti->taskCount(), ti->taskIndex0(),
+                     ti->taskIndex1(), ti->taskIndex2(), ti->taskCount0(), ti->taskCount1(), ti->taskCount2());
+        });
+    }
+}
+
+inline void TaskGroup::Sync() { tbbTaskGroup.wait(); }
+
+#endif // ISPC_USE_TBB_TASK_GROUP
+
+///////////////////////////////////////////////////////////////////////////
+// ISPC_USE_HPX
+
+#ifdef ISPC_USE_HPX
+
+static void InitTaskSystem() {}
+
+inline void TaskGroup::Launch(int baseIndex, int count) {
+    for (int i = 0; i < count; ++i) {
+        TaskInfo *ti = GetTaskInfo(baseIndex + i);
+        int threadIndex = i;
+        int threadCount = count;
+        futures.push_back(hpx::async(ti->func, ti->data, threadIndex, threadCount, ti->taskIndex, ti->taskCount(),
+                                     ti->taskIndex0(), ti->taskIndex1(), ti->taskIndex2(), ti->taskCount0(),
+                                     ti->taskCount1(), ti->taskCount2()));
+    }
+}
+
+inline void TaskGroup::Sync() {
+    hpx::wait_all(futures);
+    futures.clear();
+}
+#endif
+///////////////////////////////////////////////////////////////////////////
+
+#ifndef ISPC_USE_PTHREADS_FULLY_SUBSCRIBED
+
+#define MAX_FREE_TASK_GROUPS 64
+static TaskGroup *freeTaskGroups[MAX_FREE_TASK_GROUPS];
+
+static inline TaskGroup *AllocTaskGroup() {
+    for (int i = 0; i < MAX_FREE_TASK_GROUPS; ++i) {
+        TaskGroup *tg = freeTaskGroups[i];
+        if (tg != nullptr) {
+            void *ptr = lAtomicCompareAndSwapPointer((void **)(&freeTaskGroups[i]), nullptr, tg);
+            if (ptr != nullptr) {
+                return (TaskGroup *)ptr;
+            }
+        }
+    }
+
+    return new TaskGroup;
+}
+
+static inline void FreeTaskGroup(TaskGroup *tg) {
+    tg->Reset();
+
+    for (int i = 0; i < MAX_FREE_TASK_GROUPS; ++i) {
+        if (freeTaskGroups[i] == nullptr) {
+            void *ptr = lAtomicCompareAndSwapPointer((void **)&freeTaskGroups[i], tg, nullptr);
+            if (ptr == nullptr)
+                return;
+        }
+    }
+
+    delete tg;
+}
+
+///////////////////////////////////////////////////////////////////////////
+
+void ISPCLaunch(void **taskGroupPtr, void *func, void *data, int count0, int count1, int count2) {
+    const int count = count0 * count1 * count2;
+    TaskGroup *taskGroup;
+    if (*taskGroupPtr == nullptr) {
+        InitTaskSystem();
+        taskGroup = AllocTaskGroup();
+        *taskGroupPtr = taskGroup;
+    } else
+        taskGroup = (TaskGroup *)(*taskGroupPtr);
+
+    int baseIndex = taskGroup->AllocTaskInfo(count);
+    for (int i = 0; i < count; ++i) {
+        TaskInfo *ti = taskGroup->GetTaskInfo(baseIndex + i);
+        ti->func = (TaskFuncType)func;
+        ti->data = data;
+        ti->taskIndex = i;
+        ti->taskCount3d[0] = count0;
+        ti->taskCount3d[1] = count1;
+        ti->taskCount3d[2] = count2;
+    }
+    taskGroup->Launch(baseIndex, count);
+}
+
+void ISPCSync(void *h) {
+    TaskGroup *taskGroup = (TaskGroup *)h;
+    if (taskGroup != nullptr) {
+        taskGroup->Sync();
+        FreeTaskGroup(taskGroup);
+    }
+}
+
+void *ISPCAlloc(void **taskGroupPtr, int64_t size, int32_t alignment) {
+    TaskGroup *taskGroup;
+    if (*taskGroupPtr == nullptr) {
+        InitTaskSystem();
+        taskGroup = AllocTaskGroup();
+        *taskGroupPtr = taskGroup;
+    } else
+        taskGroup = (TaskGroup *)(*taskGroupPtr);
+
+    return taskGroup->AllocMemory(size, alignment);
+}
+
+#else // ISPC_USE_PTHREADS_FULLY_SUBSCRIBED
+
+#define MAX_LIVE_TASKS 1024
+
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// Small structure used to hold the data for each task
+struct Task {
+  public:
+    TaskFuncType func;
+    void *data;
+    volatile int32_t taskIndex;
+    int taskCount;
+
+    volatile int numDone;
+    int liveIndex; // index in live task queue
+
+    inline int noMoreWork() { return taskIndex >= taskCount; }
+    /*! given thread is done working on this task --> decrease num locks */
+    // inline void lock() { lAtomicAdd(&locks,1); }
+    // inline void unlock() { lAtomicAdd(&locks,-1); }
+    inline int nextJob() { return lAtomicAdd(&taskIndex, 1); }
+    inline int numJobs() { return taskCount; }
+    inline void schedule(int idx) {
+        taskIndex = 0;
+        numDone = 0;
+        liveIndex = idx;
+    }
+    inline void run(int idx, int threadIdx);
+    inline void markOneDone() { lAtomicAdd(&numDone, 1); }
+    inline void wait() {
+        while (!noMoreWork()) {
+            int next = nextJob();
+            if (next < numJobs())
+                run(next, 0);
+        }
+        while (numDone != taskCount) {
+            usleep(1);
+        }
+    }
+};
+
+///////////////////////////////////////////////////////////////////////////
+class TaskSys {
+    static int numThreadsRunning;
+    struct LiveTask {
+        volatile int locks;  /*!< num locks on this task. gets
+                                  initialized to NUM_THREADS+1, then counted
+                                  down by every thread that sees this. this
+                                  value is only valid when 'active' is set
+                                  to true */
+        volatile int active; /*! workers will spin on this until it
+                                 becomes active */
+        Task *task;
+
+        inline void doneWithThis() { lAtomicAdd(&locks, -1); }
+        LiveTask() : active(0), locks(-1) {}
+    };
+
+  public:
+    volatile int nextScheduleIndex; /*! next index in the task queue
+                                        where we'll insert a live task */
+
+    // inline int inc_begin() { int old = begin; begin = (begin+1)%MAX_TASKS; return old; }
+    // inline int inc_end() { int old = end; end = (end+1)%MAX_TASKS; return old; }
+
+    LiveTask taskQueue[MAX_LIVE_TASKS];
+    std::stack<Task *> taskMem;
+
+    static TaskSys *global;
+
+    TaskSys() : nextScheduleIndex(0) {
+        TaskSys::global = this;
+        Task *mem = new Task[MAX_LIVE_TASKS]; //< could actually be more than _live_ tasks
+        for (int i = 0; i < MAX_LIVE_TASKS; i++) {
+            taskMem.push(mem + i);
+        }
+        createThreads();
+    }
+
+    inline Task *allocOne() {
+        pthread_mutex_lock(&mutex);
+        if (taskMem.empty()) {
+            fprintf(stderr, "Too many live tasks.  "
+                            "Change the value of MAX_LIVE_TASKS and recompile.\n");
+            exit(1);
+        }
+        Task *task = taskMem.top();
+        taskMem.pop();
+        pthread_mutex_unlock(&mutex);
+        return task;
+    }
+
+    static inline void init() {
+        if (global)
+            return;
+        pthread_mutex_lock(&mutex);
+        if (global == nullptr)
+            global = new TaskSys;
+        pthread_mutex_unlock(&mutex);
+    }
+
+    void createThreads();
+    int nThreads;
+    pthread_t *thread;
+
+    void threadFct();
+
+    inline void schedule(Task *t) {
+        pthread_mutex_lock(&mutex);
+        int liveIndex = nextScheduleIndex;
+        nextScheduleIndex = (nextScheduleIndex + 1) % MAX_LIVE_TASKS;
+        if (taskQueue[liveIndex].active) {
+            fprintf(stderr, "Out of task queue resources.  "
+                            "Change the value of MAX_LIVE_TASKS and recompile.\n");
+            exit(1);
+        }
+        taskQueue[liveIndex].task = t;
+        t->schedule(liveIndex);
+        taskQueue[liveIndex].locks = numThreadsRunning + 1; // num _worker_ threads plus creator
+        taskQueue[liveIndex].active = true;
+        pthread_mutex_unlock(&mutex);
+    }
+
+    void sync(Task *task) {
+        task->wait();
+        int liveIndex = task->liveIndex;
+        while (taskQueue[liveIndex].locks > 1) {
+            usleep(1);
+        }
+        _mm_free(task->data);
+        pthread_mutex_lock(&mutex);
+        taskMem.push(task); // recycle task index
+        taskQueue[liveIndex].active = false;
+        pthread_mutex_unlock(&mutex);
+    }
+};
+
+void TaskSys::threadFct() {
+    int myIndex = 0; // lAtomicAdd(&threadIdx,1);
+    while (1) {
+        while (!taskQueue[myIndex].active) {
+            usleep(4);
+            continue;
+        }
+
+        Task *mine = taskQueue[myIndex].task;
+        while (!mine->noMoreWork()) {
+            int job = mine->nextJob();
+            if (job >= mine->numJobs())
+                break;
+            mine->run(job, myIndex);
+        }
+        taskQueue[myIndex].doneWithThis();
+        myIndex = (myIndex + 1) % MAX_LIVE_TASKS;
+    }
+}
+
+inline void Task::run(int idx, int threadIdx) {
+    (*this->func)(data, threadIdx, TaskSys::global->nThreads, idx, taskCount);
+    markOneDone();
+}
+
+void *_threadFct(void *data) {
+    ((TaskSys *)data)->threadFct();
+    return nullptr;
+}
+
+void TaskSys::createThreads() {
+    init();
+    int reserved = 4;
+    int minid = 2;
+    nThreads = sysconf(_SC_NPROCESSORS_ONLN) - reserved;
+
+    thread = (pthread_t *)malloc(nThreads * sizeof(pthread_t));
+
+    numThreadsRunning = 0;
+    for (int i = 0; i < nThreads; ++i) {
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        pthread_attr_setstacksize(&attr, 2 * 1024 * 1024);
+
+        int threadID = minid + i;
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        CPU_SET(threadID, &cpuset);
+        int ret = pthread_attr_setaffinity_np(&attr, sizeof(cpuset), &cpuset);
+
+        int err = pthread_create(&thread[i], &attr, &_threadFct, this);
+        ++numThreadsRunning;
+        if (err != 0) {
+            fprintf(stderr, "Error creating pthread %d: %s\n", i, strerror(err));
+            exit(1);
+        }
+    }
+}
+
+TaskSys *TaskSys::global = nullptr;
+int TaskSys::numThreadsRunning = 0;
+
+///////////////////////////////////////////////////////////////////////////
+
+void ISPCLaunch(void **taskGroupPtr, void *func, void *data, int count) {
+    Task *ti = *(Task **)taskGroupPtr;
+    ti->func = (TaskFuncType)func;
+    ti->data = data;
+    ti->taskIndex = 0;
+    ti->taskCount = count;
+    TaskSys::global->schedule(ti);
+}
+
+void ISPCSync(void *h) {
+    Task *task = (Task *)h;
+    assert(task);
+    TaskSys::global->sync(task);
+}
+
+void *ISPCAlloc(void **taskGroupPtr, int64_t size, int32_t alignment) {
+    TaskSys::init();
+    Task *task = TaskSys::global->allocOne();
+    *taskGroupPtr = task;
+    task->data = _mm_malloc(size, alignment);
+    return task->data; //*taskGroupPtr;
+}
+
+#endif // ISPC_USE_PTHREADS_FULLY_SUBSCRIBED
+
+
+
+================================================
+FILE: prog1_mandelbrot_threads/main.cpp
+================================================
+#include <stdio.h>
+#include <algorithm>
+#include <getopt.h>
+
+#include "CycleTimer.h"
+
+extern void mandelbrotSerial(
+    float x0, float y0, float x1, float y1,
+    int width, int height,
+    int startRow, int numRows,
+    int maxIterations,
+    int output[]);
+
+extern void mandelbrotThread(
+    int numThreads,
+    float x0, float y0, float x1, float y1,
+    int width, int height,
+    int maxIterations,
+    int output[]);
+
+extern void writePPMImage(
+    int* data,
+    int width, int height,
+    const char *filename,
+    int maxIterations);
+
+void
+scaleAndShift(float& x0, float& x1, float& y0, float& y1,
+              float scale,
+              float shiftX, float shiftY)
+{
+
+    x0 *= scale;
+    x1 *= scale;
+    y0 *= scale;
+    y1 *= scale;
+    x0 += shiftX;
+    x1 += shiftX;
+    y0 += shiftY;
+    y1 += shiftY;
+
+}
+
+void usage(const char* progname) {
+    printf("Usage: %s [options]\n", progname);
+    printf("Program Options:\n");
+    printf("  -t  --threads <N>  Use N threads\n");
+    printf("  -v  --view <INT>   Use specified view settings\n");
+    printf("  -?  --help         This message\n");
+}
+
+bool verifyResult (int *gold, int *result, int width, int height) {
+
+    int i, j;
+
+    for (i = 0; i < height; i++) {
+        for (j = 0; j < width; j++) {
+            if (gold[i * width + j] != result[i * width + j]) {
+                printf ("Mismatch : [%d][%d], Expected : %d, Actual : %d\n",
+                            i, j, gold[i * width + j], result[i * width + j]);
+                return 0;
+            }
+        }
+    }
+
+    return 1;
+}
+
+int main(int argc, char** argv) {
+
+    const unsigned int width = 1600;
+    const unsigned int height = 1200;
+    const int maxIterations = 256;
+    int numThreads = 2;
+
+    float x0 = -2;
+    float x1 = 1;
+    float y0 = -1;
+    float y1 = 1;
+
+    // parse commandline options ////////////////////////////////////////////
+    int opt;
+    static struct option long_options[] = {
+        {"threads", 1, 0, 't'},
+        {"view", 1, 0, 'v'},
+        {"help", 0, 0, '?'},
+        {0 ,0, 0, 0}
+    };
+
+    while ((opt = getopt_long(argc, argv, "t:v:?", long_options, NULL)) != EOF) {
+
+        switch (opt) {
+        case 't':
+        {
+            numThreads = atoi(optarg);
+            break;
+        }
+        case 'v':
+        {
+            int viewIndex = atoi(optarg);
+            // change view settings
+            if (viewIndex == 2) {
+                float scaleValue = .015f;
+                float shiftX = -.986f;
+                float shiftY = .30f;
+                scaleAndShift(x0, x1, y0, y1, scaleValue, shiftX, shiftY);
+            } else if (viewIndex > 1) {
+                fprintf(stderr, "Invalid view index\n");
+                return 1;
+            }
+            break;
+        }
+        case '?':
+        default:
+            usage(argv[0]);
+            return 1;
+        }
+    }
+    // end parsing of commandline options
+
+
+    int* output_serial = new int[width*height];
+    int* output_thread = new int[width*height];
+    
+    //
+    // Run the serial implementation.  Run the code three times and
+    // take the minimum to get a good estimate.
+    //
+
+    double minSerial = 1e30;
+    for (int i = 0; i < 5; ++i) {
+       memset(output_serial, 0, width * height * sizeof(int));
+        double startTime = CycleTimer::currentSeconds();
+        mandelbrotSerial(x0, y0, x1, y1, width, height, 0, height, maxIterations, output_serial);
+        double endTime = CycleTimer::currentSeconds();
+        minSerial = std::min(minSerial, endTime - startTime);
+    }
+
+    printf("[mandelbrot serial]:\t\t[%.3f] ms\n", minSerial * 1000);
+    writePPMImage(output_serial, width, height, "mandelbrot-serial.ppm", maxIterations);
+
+    //
+    // Run the threaded version
+    //
+
+    double minThread = 1e30;
+    for (int i = 0; i < 5; ++i) {
+      memset(output_thread, 0, width * height * sizeof(int));
+        double startTime = CycleTimer::currentSeconds();
+        mandelbrotThread(numThreads, x0, y0, x1, y1, width, height, maxIterations, output_thread);
+        double endTime = CycleTimer::currentSeconds();
+        minThread = std::min(minThread, endTime - startTime);
+    }
+
+    printf("[mandelbrot thread]:\t\t[%.3f] ms\n", minThread * 1000);
+    writePPMImage(output_thread, width, height, "mandelbrot-thread.ppm", maxIterations);
+
+    if (! verifyResult (output_serial, output_thread, width, height)) {
+        printf ("Error : Output from threads does not match serial output\n");
+
+        delete[] output_serial;
+        delete[] output_thread;
+
+        return 1;
+    }
+
+    // compute speedup
+    printf("\t\t\t\t(%.2fx speedup from %d threads)\n", minSerial/minThread, numThreads);
+
+    delete[] output_serial;
+    delete[] output_thread;
+
+    return 0;
+}
+
+
+
+================================================
+FILE: prog1_mandelbrot_threads/Makefile
+================================================
+
+CXX=g++ -m64
+CXXFLAGS=-I../common -Iobjs/ -O3 -std=c++11 -Wall -fPIC
+
+APP_NAME=mandelbrot
+OBJDIR=objs
+COMMONDIR=../common
+
+PPM_CXX=$(COMMONDIR)/ppm.cpp
+PPM_OBJ=$(addprefix $(OBJDIR)/, $(subst $(COMMONDIR)/,, $(PPM_CXX:.cpp=.o)))
+
+
+default: $(APP_NAME)
+
+.PHONY: dirs clean
+
+dirs:
+		/bin/mkdir -p $(OBJDIR)/
+
+clean:
+		/bin/rm -rf $(OBJDIR) *.ppm *~ $(APP_NAME)
+
+OBJS=$(OBJDIR)/main.o $(OBJDIR)/mandelbrotSerial.o $(OBJDIR)/mandelbrotThread.o $(PPM_OBJ)
+
+$(APP_NAME): dirs $(OBJS)
+		$(CXX) $(CXXFLAGS) -o $@ $(OBJS) -lm -lpthread
+
+$(OBJDIR)/%.o: %.cpp
+		$(CXX) $< $(CXXFLAGS) -c -o $@
+
+$(OBJDIR)/%.o: $(COMMONDIR)/%.cpp
+	$(CXX) $< $(CXXFLAGS) -c -o $@
+
+$(OBJDIR)/main.o: $(COMMONDIR)/CycleTimer.h
+
+
+
+
+================================================
+FILE: prog1_mandelbrot_threads/mandelbrotSerial.cpp
+================================================
+/*
+
+  Note: This code was modified from example code
+  originally provided by Intel.  To comply with Intel's open source
+  licensing agreement, their copyright is retained below.
+
+  -----------------------------------------------------------------
+
+  Copyright (c) 2010-2011, Intel Corporation
+  All rights reserved.
+
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are
+  met:
+
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+
+    * Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+
+    * Neither the name of Intel Corporation nor the names of its
+      contributors may be used to endorse or promote products derived from
+      this software without specific prior written permission.
+
+   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+   IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+   TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+   PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER
+   OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+   EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+   PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+   PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+   LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
+
+static inline int mandel(float c_re, float c_im, int count)
+{
+    float z_re = c_re, z_im = c_im;
+    int i;
+    for (i = 0; i < count; ++i) {
+
+        if (z_re * z_re + z_im * z_im > 4.f)
+            break;
+
+        float new_re = z_re*z_re - z_im*z_im;
+        float new_im = 2.f * z_re * z_im;
+        z_re = c_re + new_re;
+        z_im = c_im + new_im;
+    }
+
+    return i;
+}
+
+//
+// MandelbrotSerial --
+//
+// Compute an image visualizing the mandelbrot set.  The resulting
+// array contains the number of iterations required before the complex
+// number corresponding to a pixel could be rejected from the set.
+//
+// * x0, y0, x1, y1 describe the complex coordinates mapping
+//   into the image viewport.
+// * width, height describe the size of the output image
+// * startRow, totalRows describe how much of the image to compute
+void mandelbrotSerial(
+    float x0, float y0, float x1, float y1,
+    int width, int height,
+    int startRow, int totalRows,
+    int maxIterations,
+    int output[])
+{
+    float dx = (x1 - x0) / width;
+    float dy = (y1 - y0) / height;
+
+    int endRow = startRow + totalRows;
+
+    for (int j = startRow; j < endRow; j++) {
+        for (int i = 0; i < width; ++i) {
+            float x = x0 + i * dx;
+            float y = y0 + j * dy;
+
+            int index = (j * width + i);
+            output[index] = mandel(x, y, maxIterations);
+        }
+    }
+}
+
+
+
+
+================================================
+FILE: prog1_mandelbrot_threads/mandelbrotThread.cpp
+================================================
+#include <stdio.h>
+#include <thread>
+
+#include "CycleTimer.h"
+
+typedef struct {
+    float x0, x1;
+    float y0, y1;
+    unsigned int width;
+    unsigned int height;
+    int maxIterations;
+    int* output;
+    int threadId;
+    int numThreads;
+} WorkerArgs;
+
+
+extern void mandelbrotSerial(
+    float x0, float y0, float x1, float y1,
+    int width, int height,
+    int startRow, int numRows,
+    int maxIterations,
+    int output[]);
+
+
+//
+// workerThreadStart --
+//
+// Thread entrypoint.
+void workerThreadStart(WorkerArgs * const args) {
+
+    // TODO FOR CS149 STUDENTS: Implement the body of the worker
+    // thread here. Each thread should make a call to mandelbrotSerial()
+    // to compute a part of the output image.  For example, in a
+    // program that uses two threads, thread 0 could compute the top
+    // half of the image and thread 1 could compute the bottom half.
+
+    printf("Hello world from thread %d\n", args->threadId);
+}
+
+//
+// MandelbrotThread --
+//
+// Multi-threaded implementation of mandelbrot set image generation.
+// Threads of execution are created by spawning std::threads.
+void mandelbrotThread(
+    int numThreads,
+    float x0, float y0, float x1, float y1,
+    int width, int height,
+    int maxIterations, int output[])
+{
+    static constexpr int MAX_THREADS = 32;
+
+    if (numThreads > MAX_THREADS)
+    {
+        fprintf(stderr, "Error: Max allowed threads is %d\n", MAX_THREADS);
+        exit(1);
+    }
+
+    // Creates thread objects that do not yet represent a thread.
+    std::thread workers[MAX_THREADS];
+    WorkerArgs args[MAX_THREADS];
+
+    for (int i=0; i<numThreads; i++) {
+      
+        // TODO FOR CS149 STUDENTS: You may or may not wish to modify
+        // the per-thread arguments here.  The code below copies the
+        // same arguments for each thread
+        args[i].x0 = x0;
+        args[i].y0 = y0;
+        args[i].x1 = x1;
+        args[i].y1 = y1;
+        args[i].width = width;
+        args[i].height = height;
+        args[i].maxIterations = maxIterations;
+        args[i].numThreads = numThreads;
+        args[i].output = output;
+      
+        args[i].threadId = i;
+    }
+
+    // Spawn the worker threads.  Note that only numThreads-1 std::threads
+    // are created and the main application thread is used as a worker
+    // as well.
+    for (int i=1; i<numThreads; i++) {
+        workers[i] = std::thread(workerThreadStart, &args[i]);
+    }
+    
+    workerThreadStart(&args[0]);
+
+    // join worker threads
+    for (int i=1; i<numThreads; i++) {
+        workers[i].join();
+    }
+}
+
+
+
+
+================================================
+FILE: prog2_vecintrin/CS149intrin.cpp
+================================================
+#include "CS149intrin.h"
+#include "logger.h"
+
+//******************
+//* Implementation *
+//******************
+
+__cs149_mask _cs149_init_ones(int first) {
+  __cs149_mask mask;
+  for (int i=0; i<VECTOR_WIDTH; i++) {
+    mask.value[i] = (i<first) ? true : false;
+  }
+  return mask;
+}
+
+__cs149_mask _cs149_mask_not(__cs149_mask &maska) {
+  __cs149_mask resultMask;
+  for (int i=0; i<VECTOR_WIDTH; i++) {
+    resultMask.value[i] = !maska.value[i];
+  }
+  CS149Logger.addLog("masknot", _cs149_init_ones(), VECTOR_WIDTH);
+  return resultMask;
+}
+
+__cs149_mask _cs149_mask_or(__cs149_mask &maska, __cs149_mask &maskb) {
+  __cs149_mask resultMask;
+  for (int i=0; i<VECTOR_WIDTH; i++) {
+    resultMask.value[i] = maska.value[i] | maskb.value[i];
+  }
+  CS149Logger.addLog("maskor", _cs149_init_ones(), VECTOR_WIDTH);
+  return resultMask;
+}
+
+__cs149_mask _cs149_mask_and(__cs149_mask &maska, __cs149_mask &maskb) {
+  __cs149_mask resultMask;
+  for (int i=0; i<VECTOR_WIDTH; i++) {
+    resultMask.value[i] = maska.value[i] && maskb.value[i];
+  }
+  CS149Logger.addLog("maskand", _cs149_init_ones(), VECTOR_WIDTH);
+  return resultMask;
+}
+
+int _cs149_cntbits(__cs149_mask &maska) {
+  int count = 0;
+  for (int i=0; i<VECTOR_WIDTH; i++) {
+    if (maska.value[i]) count++;
+  }
+  CS149Logger.addLog("cntbits", _cs149_init_ones(), VECTOR_WIDTH);
+  return count;
+}
+
+template <typename T>
+void _cs149_vset(__cs149_vec<T> &vecResult, T value, __cs149_mask &mask) {
+  for (int i=0; i<VECTOR_WIDTH; i++) {
+    vecResult.value[i] = mask.value[i] ? value : vecResult.value[i];
+  }
+  CS149Logger.addLog("vset", mask, VECTOR_WIDTH);
+}
+
+template void _cs149_vset<float>(__cs149_vec_float &vecResult, float value, __cs149_mask &mask);
+template void _cs149_vset<int>(__cs149_vec_int &vecResult, int value, __cs149_mask &mask);
+
+void _cs149_vset_float(__cs149_vec_float &vecResult, float value, __cs149_mask &mask) { _cs149_vset<float>(vecResult, value, mask); }
+void _cs149_vset_int(__cs149_vec_int &vecResult, int value, __cs149_mask &mask) { _cs149_vset<int>(vecResult, value, mask); }
+
+__cs149_vec_float _cs149_vset_float(float value) {
+  __cs149_vec_float vecResult;
+  __cs149_mask mask = _cs149_init_ones();
+  _cs149_vset_float(vecResult, value, mask);
+  return vecResult;
+}
+__cs149_vec_int _cs149_vset_int(int value) {
+  __cs149_vec_int vecResult;
+  __cs149_mask mask = _cs149_init_ones();
+  _cs149_vset_int(vecResult, value, mask);
+  return vecResult;
+}
+
+template <typename T>
+void _cs149_vmove(__cs149_vec<T> &dest, __cs149_vec<T> &src, __cs149_mask &mask) {
+    for (int i = 0; i < VECTOR_WIDTH; i++) {
+        dest.value[i] = mask.value[i] ? src.value[i] : dest.value[i];
+    }
+    CS149Logger.addLog("vmove", mask, VECTOR_WIDTH);
+}
+
+template void _cs149_vmove<float>(__cs149_vec_float &dest, __cs149_vec_float &src, __cs149_mask &mask);
+template void _cs149_vmove<int>(__cs149_vec_int &dest, __cs149_vec_int &src, __cs149_mask &mask);
+
+void _cs149_vmove_float(__cs149_vec_float &dest, __cs149_vec_float &src, __cs149_mask &mask) { _cs149_vmove<float>(dest, src, mask); }
+void _cs149_vmove_int(__cs149_vec_int &dest, __cs149_vec_int &src, __cs149_mask &mask) { _cs149_vmove<int>(dest, src, mask); }
+
+template <typename T>
+void _cs149_vload(__cs149_vec<T> &dest, T* src, __cs149_mask &mask) {
+  for (int i=0; i<VECTOR_WIDTH; i++) {
+    dest.value[i] = mask.value[i] ? src[i] : dest.value[i];
+  }
+  CS149Logger.addLog("vload", mask, VECTOR_WIDTH);
+}
+
+template void _cs149_vload<float>(__cs149_vec_float &dest, float* src, __cs149_mask &mask);
+template void _cs149_vload<int>(__cs149_vec_int &dest, int* src, __cs149_mask &mask);
+
+void _cs149_vload_float(__cs149_vec_float &dest, float* src, __cs149_mask &mask) { _cs149_vload<float>(dest, src, mask); }
+void _cs149_vload_int(__cs149_vec_int &dest, int* src, __cs149_mask &mask) { _cs149_vload<int>(dest, src, mask); }
+
+template <typename T>
+void _cs149_vstore(T* dest, __cs149_vec<T> &src, __cs149_mask &mask) {
+  for (int i=0; i<VECTOR_WIDTH; i++) {
+    dest[i] = mask.value[i] ? src.value[i] : dest[i];
+  }
+  CS149Logger.addLog("vstore", mask, VECTOR_WIDTH);
+}
+
+template void _cs149_vstore<float>(float* dest, __cs149_vec_float &src, __cs149_mask &mask);
+template void _cs149_vstore<int>(int* dest, __cs149_vec_int &src, __cs149_mask &mask);
+
+void _cs149_vstore_float(float* dest, __cs149_vec_float &src, __cs149_mask &mask) { _cs149_vstore<float>(dest, src, mask); }
+void _cs149_vstore_int(int* dest, __cs149_vec_int &src, __cs149_mask &mask) { _cs149_vstore<int>(dest, src, mask); }
+
+template <typename T>
+void _cs149_vadd(__cs149_vec<T> &vecResult, __cs149_vec<T> &veca, __cs149_vec<T> &vecb, __cs149_mask &mask) {
+  for (int i=0; i<VECTOR_WIDTH; i++) {
+    vecResult.value[i] = mask.value[i] ? (veca.value[i] + vecb.value[i]) : vecResult.value[i];
+  }
+  CS149Logger.addLog("vadd", mask, VECTOR_WIDTH);
+}
+
+template void _cs149_vadd<float>(__cs149_vec_float &vecResult, __cs149_vec_float &veca, __cs149_vec_float &vecb, __cs149_mask &mask);
+template void _cs149_vadd<int>(__cs149_vec_int &vecResult, __cs149_vec_int &veca, __cs149_vec_int &vecb, __cs149_mask &mask);
+
+void _cs149_vadd_float(__cs149_vec_float &vecResult, __cs149_vec_float &veca, __cs149_vec_float &vecb, __cs149_mask &mask) { _cs149_vadd<float>(vecResult, veca, vecb, mask); }
+void _cs149_vadd_int(__cs149_vec_int &vecResult, __cs149_vec_int &veca, __cs149_vec_int &vecb, __cs149_mask &mask) { _cs149_vadd<int>(vecResult, veca, vecb, mask); }
+
+template <typename T>
+void _cs149_vsub(__cs149_vec<T> &vecResult, __cs149_vec<T> &veca, __cs149_vec<T> &vecb, __cs149_mask &mask) {
+  for (int i=0; i<VECTOR_WIDTH; i++) {
+    vecResult.value[i] = mask.value[i] ? (veca.value[i] - vecb.value[i]) : vecResult.value[i];
+  }
+  CS149Logger.addLog("vsub", mask, VECTOR_WIDTH);
+}
+
+template void _cs149_vsub<float>(__cs149_vec_float &vecResult, __cs149_vec_float &veca, __cs149_vec_float &vecb, __cs149_mask &mask);
+template void _cs149_vsub<int>(__cs149_vec_int &vecResult, __cs149_vec_int &veca, __cs149_vec_int &vecb, __cs149_mask &mask);
+
+void _cs149_vsub_float(__cs149_vec_float &vecResult, __cs149_vec_float &veca, __cs149_vec_float &vecb, __cs149_mask &mask) { _cs149_vsub<float>(vecResult, veca, vecb, mask); }
+void _cs149_vsub_int(__cs149_vec_int &vecResult, __cs149_vec_int &veca, __cs149_vec_int &vecb, __cs149_mask &mask) { _cs149_vsub<int>(vecResult, veca, vecb, mask); }
+
+template <typename T>
+void _cs149_vmult(__cs149_vec<T> &vecResult, __cs149_vec<T> &veca, __cs149_vec<T> &vecb, __cs149_mask &mask) {
+  for (int i=0; i<VECTOR_WIDTH; i++) {
+    vecResult.value[i] = mask.value[i] ? (veca.value[i] * vecb.value[i]) : vecResult.value[i];
+  }
+  CS149Logger.addLog("vmult", mask, VECTOR_WIDTH);
+}
+
+template void _cs149_vmult<float>(__cs149_vec_float &vecResult, __cs149_vec_float &veca, __cs149_vec_float &vecb, __cs149_mask &mask);
+template void _cs149_vmult<int>(__cs149_vec_int &vecResult, __cs149_vec_int &veca, __cs149_vec_int &vecb, __cs149_mask &mask);
+
+void _cs149_vmult_float(__cs149_vec_float &vecResult, __cs149_vec_float &veca, __cs149_vec_float &vecb, __cs149_mask &mask) { _cs149_vmult<float>(vecResult, veca, vecb, mask); }
+void _cs149_vmult_int(__cs149_vec_int &vecResult, __cs149_vec_int &veca, __cs149_vec_int &vecb, __cs149_mask &mask) { _cs149_vmult<int>(vecResult, veca, vecb, mask); }
+
+template <typename T>
+void _cs149_vdiv(__cs149_vec<T> &vecResult, __cs149_vec<T> &veca, __cs149_vec<T> &vecb, __cs149_mask &mask) {
+  for (int i=0; i<VECTOR_WIDTH; i++) {
+    vecResult.value[i] = mask.value[i] ? (veca.value[i] / vecb.value[i]) : vecResult.value[i];
+  }
+  CS149Logger.addLog("vdiv", mask, VECTOR_WIDTH);
+}
+
+template void _cs149_vdiv<float>(__cs149_vec_float &vecResult, __cs149_vec_float &veca, __cs149_vec_float &vecb, __cs149_mask &mask);
+template void _cs149_vdiv<int>(__cs149_vec_int &vecResult, __cs149_vec_int &veca, __cs149_vec_int &vecb, __cs149_mask &mask);
+
+void _cs149_vdiv_float(__cs149_vec_float &vecResult, __cs149_vec_float &veca, __cs149_vec_float &vecb, __cs149_mask &mask) { _cs149_vdiv<float>(vecResult, veca, vecb, mask); }
+void _cs149_vdiv_int(__cs149_vec_int &vecResult, __cs149_vec_int &veca, __cs149_vec_int &vecb, __cs149_mask &mask) { _cs149_vdiv<int>(vecResult, veca, vecb, mask); }
+
+template <typename T>
+void _cs149_vabs(__cs149_vec<T> &vecResult, __cs149_vec<T> &veca, __cs149_mask &mask) {
+  for (int i=0; i<VECTOR_WIDTH; i++) {
+    vecResult.value[i] = mask.value[i] ? (abs(veca.value[i])) : vecResult.value[i];
+  }
+  CS149Logger.addLog("vabs", mask, VECTOR_WIDTH);
+}
+
+template void _cs149_vabs<float>(__cs149_vec_float &vecResult, __cs149_vec_float &veca, __cs149_mask &mask);
+template void _cs149_vabs<int>(__cs149_vec_int &vecResult, __cs149_vec_int &veca, __cs149_mask &mask);
+
+void _cs149_vabs_float(__cs149_vec_float &vecResult, __cs149_vec_float &veca, __cs149_mask &mask) { _cs149_vabs<float>(vecResult, veca, mask); }
+void _cs149_vabs_int(__cs149_vec_int &vecResult, __cs149_vec_int &veca, __cs149_mask &mask) { _cs149_vabs<int>(vecResult, veca, mask); }
+
+template <typename T>
+void _cs149_vgt(__cs149_mask &maskResult, __cs149_vec<T> &veca, __cs149_vec<T> &vecb, __cs149_mask &mask) {
+  for (int i=0; i<VECTOR_WIDTH; i++) {
+    maskResult.value[i] = mask.value[i] ? (veca.value[i] > vecb.value[i]) : maskResult.value[i];
+  }
+  CS149Logger.addLog("vgt", mask, VECTOR_WIDTH);
+}
+
+template void _cs149_vgt<float>(__cs149_mask &maskResult, __cs149_vec_float &veca, __cs149_vec_float &vecb, __cs149_mask &mask);
+template void _cs149_vgt<int>(__cs149_mask &maskResult, __cs149_vec_int &veca, __cs149_vec_int &vecb, __cs149_mask &mask);
+
+void _cs149_vgt_float(__cs149_mask &maskResult, __cs149_vec_float &veca, __cs149_vec_float &vecb, __cs149_mask &mask) { _cs149_vgt<float>(maskResult, veca, vecb, mask); }
+void _cs149_vgt_int(__cs149_mask &maskResult, __cs149_vec_int &veca, __cs149_vec_int &vecb, __cs149_mask &mask) { _cs149_vgt<int>(maskResult, veca, vecb, mask); }
+
+template <typename T>
+void _cs149_vlt(__cs149_mask &maskResult, __cs149_vec<T> &veca, __cs149_vec<T> &vecb, __cs149_mask &mask) {
+  for (int i=0; i<VECTOR_WIDTH; i++) {
+    maskResult.value[i] = mask.value[i] ? (veca.value[i] < vecb.value[i]) : maskResult.value[i];
+  }
+  CS149Logger.addLog("vlt", mask, VECTOR_WIDTH);
+}
+
+template void _cs149_vlt<float>(__cs149_mask &maskResult, __cs149_vec_float &veca, __cs149_vec_float &vecb, __cs149_mask &mask);
+template void _cs149_vlt<int>(__cs149_mask &maskResult, __cs149_vec_int &veca, __cs149_vec_int &vecb, __cs149_mask &mask);
+
+void _cs149_vlt_float(__cs149_mask &maskResult, __cs149_vec_float &veca, __cs149_vec_float &vecb, __cs149_mask &mask) { _cs149_vlt<float>(maskResult, veca, vecb, mask); }
+void _cs149_vlt_int(__cs149_mask &maskResult, __cs149_vec_int &veca, __cs149_vec_int &vecb, __cs149_mask &mask) { _cs149_vlt<int>(maskResult, veca, vecb, mask); }
+
+template <typename T>
+void _cs149_veq(__cs149_mask &maskResult, __cs149_vec<T> &veca, __cs149_vec<T> &vecb, __cs149_mask &mask) {
+  for (int i=0; i<VECTOR_WIDTH; i++) {
+    maskResult.value[i] = mask.value[i] ? (veca.value[i] == vecb.value[i]) : maskResult.value[i];
+  }
+  CS149Logger.addLog("veq", mask, VECTOR_WIDTH);
+}
+
+template void _cs149_veq<float>(__cs149_mask &maskResult, __cs149_vec_float &veca, __cs149_vec_float &vecb, __cs149_mask &mask);
+template void _cs149_veq<int>(__cs149_mask &maskResult, __cs149_vec_int &veca, __cs149_vec_int &vecb, __cs149_mask &mask);
+
+void _cs149_veq_float(__cs149_mask &maskResult, __cs149_vec_float &veca, __cs149_vec_float &vecb, __cs149_mask &mask) { _cs149_veq<float>(maskResult, veca, vecb, mask); }
+void _cs149_veq_int(__cs149_mask &maskResult, __cs149_vec_int &veca, __cs149_vec_int &vecb, __cs149_mask &mask) { _cs149_veq<int>(maskResult, veca, vecb, mask); }
+
+template <typename T>
+void _cs149_hadd(__cs149_vec<T> &vecResult, __cs149_vec<T> &vec) {
+  for (int i=0; i<VECTOR_WIDTH/2; i++) {
+    T result = vec.value[2*i] + vec.value[2*i+1];
+    vecResult.value[2 * i] = result;
+    vecResult.value[2 * i + 1] = result;
+  }
+}
+
+template void _cs149_hadd<float>(__cs149_vec_float &vecResult, __cs149_vec_float &vec);
+
+void _cs149_hadd_float(__cs149_vec_float &vecResult, __cs149_vec_float &vec) { _cs149_hadd<float>(vecResult, vec); }
+
+template <typename T>
+void _cs149_interleave(__cs149_vec<T> &vecResult, __cs149_vec<T> &vec) {
+  for (int i=0; i<VECTOR_WIDTH; i++) {
+    int index = i < VECTOR_WIDTH/2 ? (2 * i) : (2 * (i - VECTOR_WIDTH/2) + 1);
+    vecResult.value[i] = vec.value[index];
+  }
+}
+
+template void _cs149_interleave<float>(__cs149_vec_float &vecResult, __cs149_vec_float &vec);
+
+void _cs149_interleave_float(__cs149_vec_float &vecResult, __cs149_vec_float &vec) { _cs149_interleave<float>(vecResult, vec); }
+
+void addUserLog(const char * logStr) {
+  CS149Logger.addLog(logStr, _cs149_init_ones(), 0);
+}
+
+
+
+
+================================================
+FILE: prog2_vecintrin/CS149intrin.h
+================================================
+// Define vector unit width here
+#define VECTOR_WIDTH 4
+
+#ifndef CS149INTRIN_H_
+#define CS149INTRIN_H_
+
+#include <cstdlib>
+#include <cmath>
+#include "logger.h"
+
+//*******************
+//* Type Definition *
+//*******************
+
+extern Logger CS149Logger;
+
+template <typename T>
+struct __cs149_vec {
+  T value[VECTOR_WIDTH];
+};
+
+// Declare a mask with __cs149_mask
+struct __cs149_mask : __cs149_vec<bool> {};
+
+// Declare a floating point vector register with __cs149_vec_float
+#define __cs149_vec_float __cs149_vec<float>
+
+// Declare an integer vector register with __cs149_vec_int
+#define __cs149_vec_int   __cs149_vec<int>
+
+//***********************
+//* Function Definition *
+//***********************
+
+// Return a mask initialized to 1 in the first N lanes and 0 in the others
+__cs149_mask _cs149_init_ones(int first = VECTOR_WIDTH);
+
+// Return the inverse of maska
+__cs149_mask _cs149_mask_not(__cs149_mask &maska);
+
+// Return (maska | maskb)
+__cs149_mask _cs149_mask_or(__cs149_mask &maska, __cs149_mask &maskb);
+
+// Return (maska & maskb)
+__cs149_mask _cs149_mask_and(__cs149_mask &maska, __cs149_mask &maskb);
+
+// Count the number of 1s in maska
+int _cs149_cntbits(__cs149_mask &maska);
+
+// Set register to value if vector lane is active
+//  otherwise keep the old value
+void _cs149_vset_float(__cs149_vec_float &vecResult, float value, __cs149_mask &mask);
+void _cs149_vset_int(__cs149_vec_int &vecResult, int value, __cs149_mask &mask);
+// For user's convenience, returns a vector register with all lanes initialized to value
+__cs149_vec_float _cs149_vset_float(float value);
+__cs149_vec_int _cs149_vset_int(int value);
+
+// Copy values from vector register src to vector register dest if vector lane active
+// otherwise keep the old value
+void _cs149_vmove_float(__cs149_vec_float &dest, __cs149_vec_float &src, __cs149_mask &mask);
+void _cs149_vmove_int(__cs149_vec_int &dest, __cs149_vec_int &src, __cs149_mask &mask);
+
+// Load values from array src to vector register dest if vector lane active
+//  otherwise keep the old value
+void _cs149_vload_float(__cs149_vec_float &dest, float* src, __cs149_mask &mask);
+void _cs149_vload_int(__cs149_vec_int &dest, int* src, __cs149_mask &mask);
+
+// Store values from vector register src to array dest if vector lane active
+//  otherwise keep the old value
+void _cs149_vstore_float(float* dest, __cs149_vec_float &src, __cs149_mask &mask);
+void _cs149_vstore_int(int* dest, __cs149_vec_int &src, __cs149_mask &mask);
+
+// Return calculation of (veca + vecb) if vector lane active
+//  otherwise keep the old value
+void _cs149_vadd_float(__cs149_vec_float &vecResult, __cs149_vec_float &veca, __cs149_vec_float &vecb, __cs149_mask &mask);
+void _cs149_vadd_int(__cs149_vec_int &vecResult, __cs149_vec_int &veca, __cs149_vec_int &vecb, __cs149_mask &mask);
+
+// Return calculation of (veca - vecb) if vector lane active
+//  otherwise keep the old value
+void _cs149_vsub_float(__cs149_vec_float &vecResult, __cs149_vec_float &veca, __cs149_vec_float &vecb, __cs149_mask &mask);
+void _cs149_vsub_int(__cs149_vec_int &vecResult, __cs149_vec_int &veca, __cs149_vec_int &vecb, __cs149_mask &mask);
+
+// Return calculation of (veca * vecb) if vector lane active
+//  otherwise keep the old value
+void _cs149_vmult_float(__cs149_vec_float &vecResult, __cs149_vec_float &veca, __cs149_vec_float &vecb, __cs149_mask &mask);
+void _cs149_vmult_int(__cs149_vec_int &vecResult, __cs149_vec_int &veca, __cs149_vec_int &vecb, __cs149_mask &mask);
+
+// Return calculation of (veca / vecb) if vector lane active
+//  otherwise keep the old value
+void _cs149_vdiv_float(__cs149_vec_float &vecResult, __cs149_vec_float &veca, __cs149_vec_float &vecb, __cs149_mask &mask);
+void _cs149_vdiv_int(__cs149_vec_int &vecResult, __cs149_vec_int &veca, __cs149_vec_int &vecb, __cs149_mask &mask);
+
+
+// Return calculation of absolute value abs(veca) if vector lane active
+//  otherwise keep the old value
+void _cs149_vabs_float(__cs149_vec_float &vecResult, __cs149_vec_float &veca, __cs149_mask &mask);
+void _cs149_vabs_int(__cs149_vec_int &vecResult, __cs149_vec_int &veca, __cs149_mask &mask);
+
+// Return a mask of (veca > vecb) if vector lane active
+//  otherwise keep the old value
+void _cs149_vgt_float(__cs149_mask &vecResult, __cs149_vec_float &veca, __cs149_vec_float &vecb, __cs149_mask &mask);
+void _cs149_vgt_int(__cs149_mask &vecResult, __cs149_vec_int &veca, __cs149_vec_int &vecb, __cs149_mask &mask);
+
+// Return a mask of (veca < vecb) if vector lane active
+//  otherwise keep the old value
+void _cs149_vlt_float(__cs149_mask &vecResult, __cs149_vec_float &veca, __cs149_vec_float &vecb, __cs149_mask &mask);
+void _cs149_vlt_int(__cs149_mask &vecResult, __cs149_vec_int &veca, __cs149_vec_int &vecb, __cs149_mask &mask);
+
+// Return a mask of (veca == vecb) if vector lane active
+//  otherwise keep the old value
+void _cs149_veq_float(__cs149_mask &vecResult, __cs149_vec_float &veca, __cs149_vec_float &vecb, __cs149_mask &mask);
+void _cs149_veq_int(__cs149_mask &vecResult, __cs149_vec_int &veca, __cs149_vec_int &vecb, __cs149_mask &mask);
+
+// Adds up adjacent pairs of elements, so
+//  [0 1 2 3] -> [0+1 0+1 2+3 2+3]
+void _cs149_hadd_float(__cs149_vec_float &vecResult, __cs149_vec_float &vec);
+
+// Performs an even-odd interleaving where all even-indexed elements move to front half
+//  of the array and odd-indexed to the back half, so
+//  [0 1 2 3 4 5 6 7] -> [0 2 4 6 1 3 5 7]
+void _cs149_interleave_float(__cs149_vec_float &vecResult, __cs149_vec_float &vec);
+
+// Add a customized log to help debugging
+void addUserLog(const char * logStr);
+
+#endif
+
+
+
+================================================
+FILE: prog2_vecintrin/logger.cpp
+================================================
+#include "logger.h"
+#include "CS149intrin.h"
+
+void Logger::addLog(const char * instruction, __cs149_mask mask, int N) {
+  Log newLog;
+  strcpy(newLog.instruction, instruction);
+  newLog.mask = 0;
+  for (int i=0; i<N; i++) {
+    if (mask.value[i]) {
+      newLog.mask |= (((unsigned long long)1)<<i);
+      stats.utilized_lane++;
+    }
+  }
+  stats.total_lane += N;
+  stats.total_instructions += (N>0);
+  log.push_back(newLog);
+}
+
+void Logger::printStats() {
+  printf("****************** Printing Vector Unit Statistics *******************\n");
+  printf("Vector Width:              %d\n", VECTOR_WIDTH);
+  printf("Total Vector Instructions: %lld\n", stats.total_instructions);
+  printf("Vector Utilization:        %.1f%%\n", (double)stats.utilized_lane/stats.total_lane*100);
+  printf("Utilized Vector Lanes:     %lld\n", stats.utilized_lane);
+  printf("Total Vector Lanes:        %lld\n", stats.total_lane);
+}
+
+
+
+void Logger::printLog() {
+  printf("***************** Printing Vector Unit Execution Log *****************\n");
+  printf(" Instruction | Vector Lane Occupancy ('*' for active, '_' for inactive)\n");
+  printf("------------- --------------------------------------------------------\n");
+  for (int i=0; i<log.size(); i++) {
+    printf("%12s | ", log[i].instruction);
+    for (int j=0; j<VECTOR_WIDTH; j++) {
+      if (log[i].mask & (((unsigned long long)1)<<j)) {
+        printf("*");
+      } else {
+        printf("_");
+      }
+    }
+    printf("\n");
+  }
+}
+
+
+
+
+================================================
+FILE: prog2_vecintrin/logger.h
+================================================
+#ifndef LOGGER_H_
+#define LOGGER_H_
+
+#include <stdio.h>
+#include <vector>
+#include <string.h>
+using namespace std;
+
+#define MAX_INST_LEN 32
+
+struct __cs149_mask;
+
+struct Log {
+  char instruction[MAX_INST_LEN];
+  unsigned long long mask; // support vector width up to 64
+};
+
+struct Statistics {
+  unsigned long long utilized_lane;
+  unsigned long long total_lane;
+  unsigned long long total_instructions;
+};
+
+class Logger {
+  private:
+    vector<Log> log;
+    Statistics stats;
+
+  public:
+    void addLog(const char * instruction, __cs149_mask mask, int N = 0);
+    void printStats();
+    void printLog();
+};
+
+#endif
+
+
+
+================================================
+FILE: prog2_vecintrin/main.cpp
+================================================
+#include <stdio.h>
+#include <algorithm>
+#include <getopt.h>
+#include <math.h>
+#include "CS149intrin.h"
+#include "logger.h"
+using namespace std;
+
+#define EXP_MAX 10
+
+Logger CS149Logger;
+
+void usage(const char* progname);
+void initValue(float* values, int* exponents, float* output, float* gold, unsigned int N);
+void absSerial(float* values, float* output, int N);
+void absVector(float* values, float* output, int N);
+void clampedExpSerial(float* values, int* exponents, float* output, int N);
+void clampedExpVector(float* values, int* exponents, float* output, int N);
+float arraySumSerial(float* values, int N);
+float arraySumVector(float* values, int N);
+bool verifyResult(float* values, int* exponents, float* output, float* gold, int N);
+
+int main(int argc, char * argv[]) {
+  int N = 16;
+  bool printLog = false;
+
+  // parse commandline options ////////////////////////////////////////////
+  int opt;
+  static struct option long_options[] = {
+    {"size", 1, 0, 's'},
+    {"log", 0, 0, 'l'},
+    {"help", 0, 0, '?'},
+    {0 ,0, 0, 0}
+  };
+
+  while ((opt = getopt_long(argc, argv, "s:l?", long_options, NULL)) != EOF) {
+
+    switch (opt) {
+      case 's':
+        N = atoi(optarg);
+        if (N <= 0) {
+          printf("Error: Workload size is set to %d (<0).\n", N);
+          return -1;
+        }
+        break;
+      case 'l':
+        printLog = true;
+        break;
+      case '?':
+      default:
+        usage(argv[0]);
+        return 1;
+    }
+  }
+
+
+  float* values = new float[N+VECTOR_WIDTH];
+  int* exponents = new int[N+VECTOR_WIDTH];
+  float* output = new float[N+VECTOR_WIDTH];
+  float* gold = new float[N+VECTOR_WIDTH];
+  initValue(values, exponents, output, gold, N);
+
+  clampedExpSerial(values, exponents, gold, N);
+  clampedExpVector(values, exponents, output, N);
+
+  //absSerial(values, gold, N);
+  //absVector(values, output, N);
+
+  printf("\e[1;31mCLAMPED EXPONENT\e[0m (required) \n");
+  bool clampedCorrect = verifyResult(values, exponents, output, gold, N);
+  if (printLog) CS149Logger.printLog();
+  CS149Logger.printStats();
+
+  printf("************************ Result Verification *************************\n");
+  if (!clampedCorrect) {
+    printf("@@@ Failed!!!\n");
+  } else {
+    printf("Passed!!!\n");
+  }
+
+  printf("\n\e[1;31mARRAY SUM\e[0m (bonus) \n");
+  if (N % VECTOR_WIDTH == 0) {
+    float sumGold = arraySumSerial(values, N);
+    float sumOutput = arraySumVector(values, N);
+    float epsilon = 0.1;
+    bool sumCorrect = abs(sumGold - sumOutput) < epsilon * 2;
+    if (!sumCorrect) {
+      printf("Expected %f, got %f\n.", sumGold, sumOutput);
+      printf("@@@ Failed!!!\n");
+    } else {
+      printf("Passed!!!\n");
+    }
+  } else {
+    printf("Must have N %% VECTOR_WIDTH == 0 for this problem (VECTOR_WIDTH is %d)\n", VECTOR_WIDTH);
+  }
+
+  delete [] values;
+  delete [] exponents;
+  delete [] output;
+  delete [] gold;
+
+  return 0;
+}
+
+void usage(const char* progname) {
+  printf("Usage: %s [options]\n", progname);
+  printf("Program Options:\n");
+  printf("  -s  --size <N>     Use workload size N (Default = 16)\n");
+  printf("  -l  --log          Print vector unit execution log\n");
+  printf("  -?  --help         This message\n");
+}
+
+void initValue(float* values, int* exponents, float* output, float* gold, unsigned int N) {
+
+  for (unsigned int i=0; i<N+VECTOR_WIDTH; i++)
+  {
+    // random input values
+    values[i] = -1.f + 4.f * static_cast<float>(rand()) / RAND_MAX;
+    exponents[i] = rand() % EXP_MAX;
+    output[i] = 0.f;
+    gold[i] = 0.f;
+  }
+
+}
+
+bool verifyResult(float* values, int* exponents, float* output, float* gold, int N) {
+  int incorrect = -1;
+  float epsilon = 0.00001;
+  for (int i=0; i<N+VECTOR_WIDTH; i++) {
+    if ( abs(output[i] - gold[i]) > epsilon ) {
+      incorrect = i;
+      break;
+    }
+  }
+
+  if (incorrect != -1) {
+    if (incorrect >= N)
+      printf("You have written to out of bound value!\n");
+    printf("Wrong calculation at value[%d]!\n", incorrect);
+    printf("value  = ");
+    for (int i=0; i<N; i++) {
+      printf("% f ", values[i]);
+    } printf("\n");
+
+    printf("exp    = ");
+    for (int i=0; i<N; i++) {
+      printf("% 9d ", exponents[i]);
+    } printf("\n");
+
+    printf("output = ");
+    for (int i=0; i<N; i++) {
+      printf("% f ", output[i]);
+    } printf("\n");
+
+    printf("gold   = ");
+    for (int i=0; i<N; i++) {
+      printf("% f ", gold[i]);
+    } printf("\n");
+    return false;
+  }
+  printf("Results matched with answer!\n");
+  return true;
+}
+
+// computes the absolute value of all elements in the input array
+// values, stores result in output
+void absSerial(float* values, float* output, int N) {
+  for (int i=0; i<N; i++) {
+    float x = values[i];
+    if (x < 0) {
+      output[i] = -x;
+    } else {
+      output[i] = x;
+    }
+  }
+}
+
+
+// implementation of absSerial() above, but it is vectorized using CS149 intrinsics
+void absVector(float* values, float* output, int N) {
+  __cs149_vec_float x;
+  __cs149_vec_float result;
+  __cs149_vec_float zero = _cs149_vset_float(0.f);
+  __cs149_mask maskAll, maskIsNegative, maskIsNotNegative;
+
+//  Note: Take a careful look at this loop indexing.  This example
+//  code is not guaranteed to work when (N % VECTOR_WIDTH) != 0.
+//  Why is that the case?
+  for (int i=0; i<N; i+=VECTOR_WIDTH) {
+
+    // All ones
+    maskAll = _cs149_init_ones();
+
+    // All zeros
+    maskIsNegative = _cs149_init_ones(0);
+
+    // Load vector of values from contiguous memory addresses
+    _cs149_vload_float(x, values+i, maskAll);               // x = values[i];
+
+    // Set mask according to predicate
+    _cs149_vlt_float(maskIsNegative, x, zero, maskAll);     // if (x < 0) {
+
+    // Execute instruction using mask ("if" clause)
+    _cs149_vsub_float(result, zero, x, maskIsNegative);      //   output[i] = -x;
+
+    // Inverse maskIsNegative to generate "else" mask
+    maskIsNotNegative = _cs149_mask_not(maskIsNegative);     // } else {
+
+    // Execute instruction ("else" clause)
+    _cs149_vload_float(result, values+i, maskIsNotNegative); //   output[i] = x; }
+
+    // Write results back to memory
+    _cs149_vstore_float(output+i, result, maskAll);
+  }
+}
+
+
+// accepts an array of values and an array of exponents
+//
+// For each element, compute values[i]^exponents[i] and clamp value to
+// 9.999.  Store result in output.
+void clampedExpSerial(float* values, int* exponents, float* output, int N) {
+  for (int i=0; i<N; i++) {
+    float x = values[i];
+    int y = exponents[i];
+    if (y == 0) {
+      output[i] = 1.f;
+    } else {
+      float result = x;
+      int count = y - 1;
+      while (count > 0) {
+        result *= x;
+        count--;
+      }
+      if (result > 9.999999f) {
+        result = 9.999999f;
+      }
+      output[i] = result;
+    }
+  }
+}
+
+void clampedExpVector(float* values, int* exponents, float* output, int N) {
+
+  //
+  // CS149 STUDENTS TODO: Implement your vectorized version of
+  // clampedExpSerial() here.
+  //
+  // Your solution should work for any value of
+  // N and VECTOR_WIDTH, not just when VECTOR_WIDTH divides N
+  //
+  
+}
+
+// returns the sum of all elements in values
+float arraySumSerial(float* values, int N) {
+  float sum = 0;
+  for (int i=0; i<N; i++) {
+    sum += values[i];
+  }
+
+  return sum;
+}
+
+// returns the sum of all elements in values
+// You can assume N is a multiple of VECTOR_WIDTH
+// You can assume VECTOR_WIDTH is a power of 2
+float arraySumVector(float* values, int N) {
+  
+  //
+  // CS149 STUDENTS TODO: Implement your vectorized version of arraySumSerial here
+  //
+  
+  for (int i=0; i<N; i+=VECTOR_WIDTH) {
+
+  }
+
+  return 0.0;
+}
+
+
+
+
+================================================
+FILE: prog2_vecintrin/Makefile
+================================================
+all: myexp
+
+logger.o: logger.cpp logger.h CS149intrin.h CS149intrin.cpp
+	g++ -c logger.cpp
+
+CS149intrin.o: CS149intrin.cpp CS149intrin.h logger.cpp logger.h
+	g++ -c CS149intrin.cpp
+
+myexp: CS149intrin.o logger.o main.cpp
+	g++ -I../common logger.o CS149intrin.o main.cpp -o myexp
+
+clean:
+	rm -f *.o myexp *~
+
+
+
+================================================
+FILE: prog3_mandelbrot_ispc/main.cpp
+================================================
+#include <stdio.h>
+#include <algorithm>
+#include <getopt.h>
+
+#include "CycleTimer.h"
+#include "mandelbrot_ispc.h"
+
+extern void mandelbrotSerial(
+    float x0, float y0, float x1, float y1,
+    int width, int height,
+    int startRow, int numRows,
+    int maxIterations,
+    int output[]);
+
+extern void mandelbrotThread(
+    int numThreads,
+    float x0, float y0, float x1, float y1,
+    int width, int height,
+    int maxIterations,
+    int output[]);
+
+extern void writePPMImage(
+    int* data,
+    int width, int height,
+    const char *filename,
+    int maxIterations);
+
+bool verifyResult (int *gold, int *result, int width, int height) {
+    int i, j;
+
+    for (i = 0; i < height; i++) {
+        for (j = 0; j < width; j++) {
+            if (gold[i * width + j] != result[i * width + j]) {
+                printf ("Mismatch : [%d][%d], Expected : %d, Actual : %d\n",
+                            i, j, gold[i * width + j], result[i * width + j]);
+                return 0;
+            }
+        }
+    }
+
+    return 1;
+}
+
+void
+scaleAndShift(float& x0, float& x1, float& y0, float& y1,
+              float scale,
+              float shiftX, float shiftY)
+{
+
+    x0 *= scale;
+    x1 *= scale;
+    y0 *= scale;
+    y1 *= scale;
+    x0 += shiftX;
+    x1 += shiftX;
+    y0 += shiftY;
+    y1 += shiftY;
+
+}
+
+using namespace ispc;
+
+void usage(const char* progname) {
+    printf("Usage: %s [options]\n", progname);
+    printf("Program Options:\n");
+    printf("  -t  --tasks        Run ISPC code implementation with tasks\n");
+    printf("  -v  --view <INT>   Use specified view settings\n");
+    printf("  -?  --help         This message\n");
+}
+
+
+int main(int argc, char** argv) {
+
+    const unsigned int width = 1200;
+    const unsigned int height = 800;
+    const int maxIterations = 256;
+
+    float x0 = -2;
+    float x1 = 1;
+    float y0 = -1;
+    float y1 = 1;
+
+    bool useTasks = false;
+
+    // parse commandline options ////////////////////////////////////////////
+    int opt;
+    static struct option long_options[] = {
+        {"tasks", 0, 0, 't'},
+        {"view",  1, 0, 'v'},
+        {"help",  0, 0, '?'},
+        {0 ,0, 0, 0}
+    };
+
+    while ((opt = getopt_long(argc, argv, "tv:?", long_options, NULL)) != EOF) {
+
+        switch (opt) {
+        case 't':
+            useTasks = true;
+            break;
+        case 'v':
+        {
+            int viewIndex = atoi(optarg);
+            // change view settings
+            if (viewIndex == 2) {
+                float scaleValue = .015f;
+                float shiftX = -.986f;
+                float shiftY = .30f;
+                scaleAndShift(x0, x1, y0, y1, scaleValue, shiftX, shiftY);
+            } else if (viewIndex > 1) {
+                fprintf(stderr, "Invalid view index\n");
+                return 1;
+            }
+            break;
+        }
+        case '?':
+        default:
+            usage(argv[0]);
+            return 1;
+        }
+    }
+    // end parsing of commandline options
+
+    int *output_serial = new int[width*height];
+    int *output_ispc = new int[width*height];
+    int *output_ispc_tasks = new int[width*height];
+
+    for (unsigned int i = 0; i < width * height; ++i)
+        output_serial[i] = 0;
+
+    //
+    // Run the serial implementation. Teport the minimum time of three
+    // runs for robust timing.
+    //
+    double minSerial = 1e30;
+    for (int i = 0; i < 3; ++i) {
+        double startTime = CycleTimer::currentSeconds();
+        mandelbrotSerial(x0, y0, x1, y1, width, height, 0, height, maxIterations, output_serial);
+        double endTime = CycleTimer::currentSeconds();
+        minSerial = std::min(minSerial, endTime - startTime);
+    }
+
+    printf("[mandelbrot serial]:\t\t[%.3f] ms\n", minSerial * 1000);
+    writePPMImage(output_serial, width, height, "mandelbrot-serial.ppm", maxIterations);
+
+    // Clear out the buffer
+    for (unsigned int i = 0; i < width * height; ++i)
+        output_ispc[i] = 0;
+
+    //
+    // Compute the image using the ispc implementation
+    //
+    double minISPC = 1e30;
+    for (int i = 0; i < 3; ++i) {
+        double startTime = CycleTimer::currentSeconds();
+        mandelbrot_ispc(x0, y0, x1, y1, width, height, maxIterations, output_ispc);
+        double endTime = CycleTimer::currentSeconds();
+        minISPC = std::min(minISPC, endTime - startTime);
+    }
+
+    printf("[mandelbrot ispc]:\t\t[%.3f] ms\n", minISPC * 1000);
+    writePPMImage(output_ispc, width, height, "mandelbrot-ispc.ppm", maxIterations);
+
+
+    if (! verifyResult (output_serial, output_ispc, width, height)) {
+        printf ("Error : ISPC output differs from sequential output\n");
+
+        delete[] output_serial;
+        delete[] output_ispc;
+        delete[] output_ispc_tasks;
+
+        return 1;
+    }
+
+    // Clear out the buffer
+    for (unsigned int i = 0; i < width * height; ++i) {
+        output_ispc_tasks[i] = 0;
+    }
+
+    double minTaskISPC = 1e30;
+    if (useTasks) {
+        //
+        // Tasking version of the ISPC code
+        //
+        for (int i = 0; i < 3; ++i) {
+            double startTime = CycleTimer::currentSeconds();
+            mandelbrot_ispc_withtasks(x0, y0, x1, y1, width, height, maxIterations, output_ispc_tasks);
+            double endTime = CycleTimer::currentSeconds();
+            minTaskISPC = std::min(minTaskISPC, endTime - startTime);
+        }
+
+        printf("[mandelbrot multicore ispc]:\t[%.3f] ms\n", minTaskISPC * 1000);
+        writePPMImage(output_ispc_tasks, width, height, "mandelbrot-task-ispc.ppm", maxIterations);
+
+        if (! verifyResult (output_serial, output_ispc_tasks, width, height)) {
+            printf ("Error : ISPC output differs from sequential output\n");
+            return 1;
+        }
+    }
+
+    printf("\t\t\t\t(%.2fx speedup from ISPC)\n", minSerial/minISPC);
+    if (useTasks) {
+        printf("\t\t\t\t(%.2fx speedup from task ISPC)\n", minSerial/minTaskISPC);
+    }
+
+    delete[] output_serial;
+    delete[] output_ispc;
+    delete[] output_ispc_tasks;
+
+
+    return 0;
+}
+
+
+
+================================================
+FILE: prog3_mandelbrot_ispc/Makefile
+================================================
+CXX=g++ -m64
+CXXFLAGS=-I../common -Iobjs/ -O3 -Wall -fPIC -ffp-contract=off
+ISPC=ispc
+# note: requires AVX2
+# disabling AVX2 FMA since it causes a difference in output compared to reference on Mandelbrot 
+ISPCFLAGS=-O3 --target=avx2-i32x8 --arch=x86-64 --opt=disable-fma --pic
+
+APP_NAME=mandelbrot_ispc
+OBJDIR=objs
+COMMONDIR=../common
+
+PPM_CXX=$(COMMONDIR)/ppm.cpp
+PPM_OBJ=$(addprefix $(OBJDIR)/, $(subst $(COMMONDIR)/,, $(PPM_CXX:.cpp=.o)))
+
+TASKSYS_CXX=$(COMMONDIR)/tasksys.cpp
+TASKSYS_LIB=-lpthread
+TASKSYS_OBJ=$(addprefix $(OBJDIR)/, $(subst $(COMMONDIR)/,, $(TASKSYS_CXX:.cpp=.o)))
+
+default: $(APP_NAME)
+
+.PHONY: dirs clean
+
+dirs:
+		/bin/mkdir -p $(OBJDIR)/
+
+clean:
+		/bin/rm -rf $(OBJDIR) *.ppm *~ $(APP_NAME)
+
+OBJS=$(OBJDIR)/main.o $(OBJDIR)/mandelbrotSerial.o $(OBJDIR)/mandelbrot_ispc.o $(PPM_OBJ) $(TASKSYS_OBJ)
+
+$(APP_NAME): dirs $(OBJS)
+		$(CXX) $(CXXFLAGS) -o $@ $(OBJS) -lm $(TASKSYS_LIB)
+
+$(OBJDIR)/%.o: %.cpp
+		$(CXX) $< $(CXXFLAGS) -c -o $@
+
+$(OBJDIR)/%.o: $(COMMONDIR)/%.cpp
+	$(CXX) $< $(CXXFLAGS) -c -o $@
+
+$(OBJDIR)/main.o: $(OBJDIR)/mandelbrot_ispc.h $(COMMONDIR)/CycleTimer.h
+
+$(OBJDIR)/%_ispc.h $(OBJDIR)//%_ispc.o: %.ispc
+		$(ISPC) $(ISPCFLAGS) $< -o $(OBJDIR)/$*_ispc.o -h $(OBJDIR)/$*_ispc.h
+
+
+
+
+================================================
+FILE: prog3_mandelbrot_ispc/mandelbrot.ispc
+================================================
+
+
+static inline int mandel(float c_re, float c_im, int count) {
+    float z_re = c_re, z_im = c_im;
+    int i;
+    for (i = 0; i < count; ++i) {
+
+        if (z_re * z_re + z_im * z_im > 4.f)
+           break;
+
+        float new_re = z_re*z_re - z_im*z_im;
+        float new_im = 2.f * z_re * z_im;
+        z_re = c_re + new_re;
+        z_im = c_im + new_im;
+    }
+
+    return i;
+}
+
+export void mandelbrot_ispc(uniform float x0, uniform float y0, 
+                            uniform float x1, uniform float y1,
+                            uniform int width, uniform int height, 
+                            uniform int maxIterations,
+                            uniform int output[])
+{
+    float dx = (x1 - x0) / width;
+    float dy = (y1 - y0) / height;
+
+    foreach (j = 0 ... height, i = 0 ... width) {
+            float x = x0 + i * dx;
+            float y = y0 + j * dy;
+
+            int index = j * width + i;
+            output[index] = mandel(x, y, maxIterations);
+    }
+}
+
+// slightly different kernel to support tasking
+task void mandelbrot_ispc_task(uniform float x0, uniform float y0, 
+                               uniform float x1, uniform float y1,
+                               uniform int width, uniform int height,
+                               uniform int rowsPerTask,
+                               uniform int maxIterations,
+                               uniform int output[])
+{
+
+    // taskIndex is an ISPC built-in
+    
+    uniform int ystart = taskIndex * rowsPerTask;
+    uniform int yend = ystart + rowsPerTask;
+    
+    uniform float dx = (x1 - x0) / width;
+    uniform float dy = (y1 - y0) / height;
+    
+    foreach (j = ystart ... yend, i = 0 ... width) {
+            float x = x0 + i * dx;
+            float y = y0 + j * dy;
+            
+            int index = j * width + i;
+            output[index] = mandel(x, y, maxIterations);
+    }
+}
+
+export void mandelbrot_ispc_withtasks(uniform float x0, uniform float y0,
+                                      uniform float x1, uniform float y1,
+                                      uniform int width, uniform int height,
+                                      uniform int maxIterations,
+                                      uniform int output[])
+{
+
+    uniform int rowsPerTask = height / 2;
+
+    // create 2 tasks
+    launch[2] mandelbrot_ispc_task(x0, y0, x1, y1,
+                                     width, height,
+                                     rowsPerTask,
+                                     maxIterations,
+                                     output); 
+}
+
+
+
+================================================
+FILE: prog3_mandelbrot_ispc/mandelbrotSerial.cpp
+================================================
+/*
+
+  15418 Spring 2012 note: This code was modified from example code
+  originally provided by Intel.  To comply with Intel's open source
+  licensing agreement, their copyright is retained below.
+
+  -----------------------------------------------------------------
+
+  Copyright (c) 2010-2011, Intel Corporation
+  All rights reserved.
+
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are
+  met:
+
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+
+    * Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+
+    * Neither the name of Intel Corporation nor the names of its
+      contributors may be used to endorse or promote products derived from
+      this software without specific prior written permission.
+
+   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+   IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+   TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+   PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER
+   OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+   EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+   PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+   PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+   LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
+
+static inline int mandel(float c_re, float c_im, int count)
+{
+    float z_re = c_re, z_im = c_im;
+    int i;
+    for (i = 0; i < count; ++i) {
+
+        if (z_re * z_re + z_im * z_im > 4.f)
+            break;
+
+        float new_re = z_re*z_re - z_im*z_im;
+        float new_im = 2.f * z_re * z_im;
+        z_re = c_re + new_re;
+        z_im = c_im + new_im;
+    }
+
+    return i;
+}
+
+//
+// MandelbrotSerial --
+//
+// Compute an image visualizing the mandelbrot set.  The resulting
+// array contains the number of iterations required before the complex
+// number corresponding to a pixel could be rejected from the set.
+//
+// * x0, y0, x1, y1 describe the complex coordinates mapping
+//   into the image viewport.
+// * width, height describe the size of the output image
+// * startRow, totalRows describe how much of the image to compute
+void mandelbrotSerial(
+    float x0, float y0, float x1, float y1,
+    int width, int height,
+    int startRow, int totalRows,
+    int maxIterations,
+    int output[])
+{
+    float dx = (x1 - x0) / width;
+    float dy = (y1 - y0) / height;
+
+    int endRow = startRow + totalRows;
+
+    for (int j = startRow; j < endRow; j++) {
+        for (int i = 0; i < width; ++i) {
+            float x = x0 + i * dx;
+            float y = y0 + j * dy;
+
+            int index = (j * width + i);
+            output[index] = mandel(x, y, maxIterations);
+        }
+    }
+}
+
+
+
+
+================================================
+FILE: prog4_sqrt/main.cpp
+================================================
+#include <stdio.h>
+#include <algorithm>
+#include <pthread.h>
+#include <math.h>
+
+#include "CycleTimer.h"
+#include "sqrt_ispc.h"
+
+using namespace ispc;
+
+extern void sqrtSerial(int N, float startGuess, float* values, float* output);
+
+static void verifyResult(int N, float* result, float* gold) {
+    for (int i=0; i<N; i++) {
+        if (fabs(result[i] - gold[i]) > 1e-4) {
+            printf("Error: [%d] Got %f expected %f\n", i, result[i], gold[i]);
+        }
+    }
+}
+
+int main() {
+
+    const unsigned int N = 20 * 1000 * 1000;
+    const float initialGuess = 1.0f;
+
+    float* values = new float[N];
+    float* output = new float[N];
+    float* gold = new float[N];
+
+    for (unsigned int i=0; i<N; i++)
+    {
+        // TODO: CS149 students.  Attempt to change the values in the
+        // array here to meet the instructions in the handout: we want
+        // to you generate best and worse-case speedups
+        
+        // starter code populates array with random input values
+        values[i] = .001f + 2.998f * static_cast<float>(rand()) / RAND_MAX;
+    }
+
+    // generate a gold version to check results
+    for (unsigned int i=0; i<N; i++)
+        gold[i] = sqrt(values[i]);
+
+    //
+    // And run the serial implementation 3 times, again reporting the
+    // minimum time.
+    //
+    double minSerial = 1e30;
+    for (int i = 0; i < 3; ++i) {
+        double startTime = CycleTimer::currentSeconds();
+        sqrtSerial(N, initialGuess, values, output);
+        double endTime = CycleTimer::currentSeconds();
+        minSerial = std::min(minSerial, endTime - startTime);
+    }
+
+    printf("[sqrt serial]:\t\t[%.3f] ms\n", minSerial * 1000);
+
+    verifyResult(N, output, gold);
+
+    //
+    // Compute the image using the ispc implementation; report the minimum
+    // time of three runs.
+    //
+    double minISPC = 1e30;
+    for (int i = 0; i < 3; ++i) {
+        double startTime = CycleTimer::currentSeconds();
+        sqrt_ispc(N, initialGuess, values, output);
+        double endTime = CycleTimer::currentSeconds();
+        minISPC = std::min(minISPC, endTime - startTime);
+    }
+
+    printf("[sqrt ispc]:\t\t[%.3f] ms\n", minISPC * 1000);
+
+    verifyResult(N, output, gold);
+
+    // Clear out the buffer
+    for (unsigned int i = 0; i < N; ++i)
+        output[i] = 0;
+
+    //
+    // Tasking version of the ISPC code
+    //
+    double minTaskISPC = 1e30;
+    for (int i = 0; i < 3; ++i) {
+        double startTime = CycleTimer::currentSeconds();
+        sqrt_ispc_withtasks(N, initialGuess, values, output);
+        double endTime = CycleTimer::currentSeconds();
+        minTaskISPC = std::min(minTaskISPC, endTime - startTime);
+    }
+
+    printf("[sqrt task ispc]:\t[%.3f] ms\n", minTaskISPC * 1000);
+
+    verifyResult(N, output, gold);
+
+    printf("\t\t\t\t(%.2fx speedup from ISPC)\n", minSerial/minISPC);
+    printf("\t\t\t\t(%.2fx speedup from task ISPC)\n", minSerial/minTaskISPC);
+
+    delete [] values;
+    delete [] output;
+    delete [] gold;
+
+    return 0;
+}
+
+
+
+================================================
+FILE: prog4_sqrt/Makefile
+================================================
+CXX=g++ -m64 -march=native
+CXXFLAGS=-I../common -Iobjs/ -O3 -Wall
+ISPC=ispc
+# note: requires AVX2 capable machine
+ISPCFLAGS=-O3 --target=avx2-i32x8 --arch=x86-64 --pic
+
+
+APP_NAME=sqrt
+OBJDIR=objs
+COMMONDIR=../common
+
+PPM_CXX=$(COMMONDIR)/ppm.cpp
+PPM_OBJ=$(addprefix $(OBJDIR)/, $(subst $(COMMONDIR)/,, $(PPM_CXX:.cpp=.o)))
+
+TASKSYS_CXX=$(COMMONDIR)/tasksys.cpp
+TASKSYS_LIB=-lpthread
+TASKSYS_OBJ=$(addprefix $(OBJDIR)/, $(subst $(COMMONDIR)/,, $(TASKSYS_CXX:.cpp=.o)))
+
+default: $(APP_NAME)
+
+.PHONY: dirs clean
+
+dirs:
+		/bin/mkdir -p $(OBJDIR)/
+
+clean:
+		/bin/rm -rf $(OBJDIR) *.ppm *~ $(APP_NAME)
+
+OBJS=$(OBJDIR)/main.o $(OBJDIR)/sqrtSerial.o $(OBJDIR)/sqrt_ispc.o $(PPM_OBJ) $(TASKSYS_OBJ)
+
+$(APP_NAME): dirs $(OBJS)
+		$(CXX) $(CXXFLAGS) -o $@ $(OBJS) -lm $(TASKSYS_LIB)
+
+$(OBJDIR)/%.o: %.cpp
+		$(CXX) $< $(CXXFLAGS) -c -o $@
+
+$(OBJDIR)/%.o: $(COMMONDIR)/%.cpp
+	$(CXX) $< $(CXXFLAGS) -c -o $@
+
+$(OBJDIR)/main.o: $(OBJDIR)/$(APP_NAME)_ispc.h $(COMMONDIR)/CycleTimer.h
+
+$(OBJDIR)/%_ispc.h $(OBJDIR)//%_ispc.o: %.ispc
+		$(ISPC) $(ISPCFLAGS) $< -o $(OBJDIR)/$*_ispc.o -h $(OBJDIR)/$*_ispc.h
+
+
+
+
+================================================
+FILE: prog4_sqrt/sqrt.ispc
+================================================
+
+static const float kThreshold = 0.00001f; 
+
+export void sqrt_ispc(uniform int N,
+                      uniform float initialGuess,
+                      uniform float values[],
+                      uniform float output[])
+{
+    foreach (i = 0 ... N) {
+
+        float x = values[i];
+        float guess = initialGuess;
+
+        float pred = abs(guess * guess * x - 1.f);
+
+        while (pred > kThreshold) {
+            guess = (3.f * guess - x * guess * guess * guess) * 0.5f;
+            pred = abs(guess * guess * x - 1.f);
+        }
+
+        output[i] = x * guess;
+        
+    }
+}
+
+task void sqrt_ispc_task(uniform int N,
+                         uniform int span,
+                         uniform float initialGuess,
+                         uniform float values[],
+                         uniform float output[])
+{
+
+    uniform int indexStart = taskIndex * span;
+    uniform int indexEnd = min(N, indexStart + span);
+    
+    foreach (i = indexStart ... indexEnd) {
+
+        float x = values[i];
+        float guess = initialGuess;
+
+        float pred = abs(guess * guess * x - 1.f);
+
+        while (pred > kThreshold) {
+            guess = (3.f * guess - x * guess * guess * guess) * 0.5f;
+            pred = abs(guess * guess * x - 1.f);
+        }
+
+        output[i] = x * guess;
+    
+    }
+}
+
+export void sqrt_ispc_withtasks(uniform int N,
+                                uniform float initialGuess,
+                                uniform float values[],
+                                uniform float output[])
+{
+
+    uniform int span = N / 64;  // 64 tasks
+
+    launch[N/span] sqrt_ispc_task(N, span, initialGuess, values, output);
+}
+
+
+
+================================================
+FILE: prog4_sqrt/sqrtSerial.cpp
+================================================
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+
+void sqrtSerial(int N,
+                float initialGuess,
+                float values[],
+                float output[])
+{
+
+    static const float kThreshold = 0.00001f;
+
+    for (int i=0; i<N; i++) {
+
+        float x = values[i];
+        float guess = initialGuess;
+
+        float error = fabs(guess * guess * x - 1.f);
+
+        while (error > kThreshold) {
+            guess = (3.f * guess - x * guess * guess * guess) * 0.5f;
+            error = fabs(guess * guess * x - 1.f);
+        }
+
+        output[i] = x * guess;
+    }
+}
+
+
+
+
+================================================
+FILE: prog5_saxpy/main.cpp
+================================================
+#include <stdio.h>
+#include <algorithm>
+
+#include "CycleTimer.h"
+#include "saxpy_ispc.h"
+
+extern void saxpySerial(int N, float a, float* X, float* Y, float* result);
+
+
+// return GB/s
+static float
+toBW(int bytes, float sec) {
+    return static_cast<float>(bytes) / (1024. * 1024. * 1024.) / sec;
+}
+
+static float
+toGFLOPS(int ops, float sec) {
+    return static_cast<float>(ops) / 1e9 / sec;
+}
+
+static void verifyResult(int N, float* result, float* gold) {
+    for (int i=0; i<N; i++) {
+        if (result[i] != gold[i]) {
+            printf("Error: [%d] Got %f expected %f\n", i, result[i], gold[i]);
+        }
+    }
+}
+
+using namespace ispc;
+
+
+int main() {
+
+    const unsigned int N = 20 * 1000 * 1000; // 20 M element vectors (~80 MB)
+    const unsigned int TOTAL_BYTES = 4 * N * sizeof(float);
+    const unsigned int TOTAL_FLOPS = 2 * N;
+
+    float scale = 2.f;
+
+    float* arrayX = new float[N];
+    float* arrayY = new float[N];
+    float* resultSerial = new float[N];
+    float* resultISPC = new float[N];
+    float* resultTasks = new float[N];
+
+    // initialize array values
+    for (unsigned int i=0; i<N; i++)
+    {
+        arrayX[i] = i;
+        arrayY[i] = i;
+        resultSerial[i] = 0.f;
+        resultISPC[i] = 0.f;
+        resultTasks[i] = 0.f;
+    }
+
+    //
+    // Run the serial implementation. Repeat three times for robust
+    // timing.
+    //
+    double minSerial = 1e30;
+    for (int i = 0; i < 3; ++i) {
+        double startTime =CycleTimer::currentSeconds();
+        saxpySerial(N, scale, arrayX, arrayY, resultSerial);
+        double endTime = CycleTimer::currentSeconds();
+        minSerial = std::min(minSerial, endTime - startTime);
+    }
+
+// printf("[saxpy serial]:\t\t[%.3f] ms\t[%.3f] GB/s\t[%.3f] GFLOPS\n",
+    //       minSerial * 1000,
+    //       toBW(TOTAL_BYTES, minSerial),
+    //       toGFLOPS(TOTAL_FLOPS, minSerial));
+
+    //
+    // Run the ISPC (single core) implementation
+    //
+    double minISPC = 1e30;
+    for (int i = 0; i < 3; ++i) {
+        double startTime = CycleTimer::currentSeconds();
+        saxpy_ispc(N, scale, arrayX, arrayY, resultISPC);
+        double endTime = CycleTimer::currentSeconds();
+        minISPC = std::min(minISPC, endTime - startTime);
+    }
+
+    verifyResult(N, resultISPC, resultSerial);
+
+    printf("[saxpy ispc]:\t\t[%.3f] ms\t[%.3f] GB/s\t[%.3f] GFLOPS\n",
+           minISPC * 1000,
+           toBW(TOTAL_BYTES, minISPC),
+           toGFLOPS(TOTAL_FLOPS, minISPC));
+
+    //
+    // Run the ISPC (multi-core) implementation
+    //
+    double minTaskISPC = 1e30;
+    for (int i = 0; i < 3; ++i) {
+        double startTime = CycleTimer::currentSeconds();
+        saxpy_ispc_withtasks(N, scale, arrayX, arrayY, resultTasks);
+        double endTime = CycleTimer::currentSeconds();
+        minTaskISPC = std::min(minTaskISPC, endTime - startTime);
+    }
+
+    verifyResult(N, resultTasks, resultSerial);
+
+    printf("[saxpy task ispc]:\t[%.3f] ms\t[%.3f] GB/s\t[%.3f] GFLOPS\n",
+           minTaskISPC * 1000,
+           toBW(TOTAL_BYTES, minTaskISPC),
+           toGFLOPS(TOTAL_FLOPS, minTaskISPC));
+
+    printf("\t\t\t\t(%.2fx speedup from use of tasks)\n", minISPC/minTaskISPC);
+    //printf("\t\t\t\t(%.2fx speedup from ISPC)\n", minSerial/minISPC);
+    //printf("\t\t\t\t(%.2fx speedup from task ISPC)\n", minSerial/minTaskISPC);
+
+    delete[] arrayX;
+    delete[] arrayY;
+    delete[] resultSerial;
+    delete[] resultISPC;
+    delete[] resultTasks;
+
+    return 0;
+}
+
+
+
+================================================
+FILE: prog5_saxpy/Makefile
+================================================
+CXX=g++ -m64
+CXXFLAGS=-I../common -Iobjs/ -O2 -Wall 
+ISPC=ispc
+# note: requires AVX2
+ISPCFLAGS=-O3 --target=avx2-i32x8 --arch=x86-64 --pic
+
+APP_NAME=saxpy
+OBJDIR=objs
+COMMONDIR=../common
+
+TASKSYS_CXX=$(COMMONDIR)/tasksys.cpp
+TASKSYS_LIB=-lpthread
+TASKSYS_OBJ=$(addprefix $(OBJDIR)/, $(subst $(COMMONDIR)/,, $(TASKSYS_CXX:.cpp=.o)))
+
+default: $(APP_NAME)
+
+.PHONY: dirs clean
+
+dirs:
+		/bin/mkdir -p $(OBJDIR)/
+
+clean:
+		/bin/rm -rf $(OBJDIR) *.ppm *~ $(APP_NAME)
+
+OBJS=$(OBJDIR)/main.o $(OBJDIR)/saxpySerial.o $(OBJDIR)/saxpy_ispc.o $(TASKSYS_OBJ)
+
+$(APP_NAME): dirs $(OBJS)
+		$(CXX) $(CXXFLAGS) -o $@ $(OBJS) -lm $(TASKSYS_LIB)
+
+$(OBJDIR)/%.o: %.cpp
+		$(CXX) $< $(CXXFLAGS) -c -o $@
+
+$(OBJDIR)/%.o: $(COMMONDIR)/%.cpp
+	$(CXX) $< $(CXXFLAGS) -c -o $@
+
+$(OBJDIR)/main.o: $(OBJDIR)/$(APP_NAME)_ispc.h $(COMMONDIR)/CycleTimer.h
+
+$(OBJDIR)/%_ispc.h $(OBJDIR)//%_ispc.o: %.ispc
+		$(ISPC) $(ISPCFLAGS) $< -o $(OBJDIR)/$*_ispc.o -h $(OBJDIR)/$*_ispc.h
+
+
+
+
+================================================
+FILE: prog5_saxpy/saxpy.ispc
+================================================
+
+export void saxpy_ispc(uniform int N,
+                       uniform float scale,
+                            uniform float X[],
+                            uniform float Y[],
+                            uniform float result[])
+{
+    foreach (i = 0 ... N) {           
+        result[i] = scale * X[i] + Y[i];
+    }
+}
+
+task void saxpy_ispc_task(uniform int N,
+                               uniform int span,
+                               uniform float scale,
+                               uniform float X[], 
+                               uniform float Y[],
+                               uniform float result[])
+{
+
+    uniform int indexStart = taskIndex * span;
+    uniform int indexEnd = min(N, indexStart + span);
+
+    foreach (i = indexStart ... indexEnd) {
+        result[i] = scale * X[i] + Y[i];
+    }
+}
+
+export void saxpy_ispc_withtasks(uniform int N,
+                               uniform float scale,
+                               uniform float X[],
+                               uniform float Y[],
+                               uniform float result[])
+{
+
+    uniform int span = N / 64;  // 64 tasks
+
+    launch[N/span] saxpy_ispc_task(N, span, scale, X, Y, result);
+}
+
+
+
+================================================
+FILE: prog5_saxpy/saxpySerial.cpp
+================================================
+
+void saxpySerial(int N,
+                       float scale,
+                       float X[],
+                       float Y[],
+                       float result[])
+{
+
+    for (int i=0; i<N; i++) {
+        result[i] = scale * X[i] + Y[i];
+    }
+}
+
+
+
+
+================================================
+FILE: prog6_kmeans/kmeansThread.cpp
+================================================
+#include <algorithm>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <thread>
+
+#include "CycleTimer.h"
+
+using namespace std;
+
+typedef struct {
+  // Control work assignments
+  int start, end;
+
+  // Shared by all functions
+  double *data;
+  double *clusterCentroids;
+  int *clusterAssignments;
+  double *currCost;
+  int M, N, K;
+} WorkerArgs;
+
+
+/**
+ * Checks if the algorithm has converged.
+ * 
+ * @param prevCost Pointer to the K dimensional array containing cluster costs 
+ *    from the previous iteration.
+ * @param currCost Pointer to the K dimensional array containing cluster costs 
+ *    from the current iteration.
+ * @param epsilon Predefined hyperparameter which is used to determine when
+ *    the algorithm has converged.
+ * @param K The number of clusters.
+ * 
+ * NOTE: DO NOT MODIFY THIS FUNCTION!!!
+ */
+static bool stoppingConditionMet(double *prevCost, double *currCost,
+                                 double epsilon, int K) {
+  for (int k = 0; k < K; k++) {
+    if (abs(prevCost[k] - currCost[k]) > epsilon)
+      return false;
+  }
+  return true;
+}
+
+/**
+ * Computes L2 distance between two points of dimension nDim.
+ * 
+ * @param x Pointer to the beginning of the array representing the first
+ *     data point.
+ * @param y Poitner to the beginning of the array representing the second
+ *     data point.
+ * @param nDim The dimensionality (number of elements) in each data point
+ *     (must be the same for x and y).
+ */
+double dist(double *x, double *y, int nDim) {
+  double accum = 0.0;
+  for (int i = 0; i < nDim; i++) {
+    accum += pow((x[i] - y[i]), 2);
+  }
+  return sqrt(accum);
+}
+
+/**
+ * Assigns each data point to its "closest" cluster centroid.
+ */
+void computeAssignments(WorkerArgs *const args) {
+  double *minDist = new double[args->M];
+  
+  // Initialize arrays
+  for (int m =0; m < args->M; m++) {
+    minDist[m] = 1e30;
+    args->clusterAssignments[m] = -1;
+  }
+
+  // Assign datapoints to closest centroids
+  for (int k = args->start; k < args->end; k++) {
+    for (int m = 0; m < args->M; m++) {
+      double d = dist(&args->data[m * args->N],
+                      &args->clusterCentroids[k * args->N], args->N);
+      if (d < minDist[m]) {
+        minDist[m] = d;
+        args->clusterAssignments[m] = k;
+      }
+    }
+  }
+
+  delete[] minDist;
+}
+
+/**
+ * Given the cluster assignments, computes the new centroid locations for
+ * each cluster.
+ */
+void computeCentroids(WorkerArgs *const args) {
+  int *counts = new int[args->K];
+
+  // Zero things out
+  for (int k = 0; k < args->K; k++) {
+    counts[k] = 0;
+    for (int n = 0; n < args->N; n++) {
+      args->clusterCentroids[k * args->N + n] = 0.0;
+    }
+  }
+
+
+  // Sum up contributions from assigned examples
+  for (int m = 0; m < args->M; m++) {
+    int k = args->clusterAssignments[m];
+    for (int n = 0; n < args->N; n++) {
+      args->clusterCentroids[k * args->N + n] +=
+          args->data[m * args->N + n];
+    }
+    counts[k]++;
+  }
+
+  // Compute means
+  for (int k = 0; k < args->K; k++) {
+    counts[k] = max(counts[k], 1); // prevent divide by 0
+    for (int n = 0; n < args->N; n++) {
+      args->clusterCentroids[k * args->N + n] /= counts[k];
+    }
+  }
+
+  delete[] counts;
+}
+
+/**
+ * Computes the per-cluster cost. Used to check if the algorithm has converged.
+ */
+void computeCost(WorkerArgs *const args) {
+  double *accum = new double[args->K];
+
+  // Zero things out
+  for (int k = 0; k < args->K; k++) {
+    accum[k] = 0.0;
+  }
+
+  // Sum cost for all data points assigned to centroid
+  for (int m = 0; m < args->M; m++) {
+    int k = args->clusterAssignments[m];
+    accum[k] += dist(&args->data[m * args->N],
+                     &args->clusterCentroids[k * args->N], args->N);
+  }
+
+  // Update costs
+  for (int k = args->start; k < args->end; k++) {
+    args->currCost[k] = accum[k];
+  }
+
+  delete[] accum;
+}
+
+/**
+ * Computes the K-Means algorithm, using std::thread to parallelize the work.
+ *
+ * @param data Pointer to an array of length M*N representing the M different N 
+ *     dimensional data points clustered. The data is layed out in a "data point
+ *     major" format, so that data[i*N] is the start of the i'th data point in 
+ *     the array. The N values of the i'th datapoint are the N values in the 
+ *     range data[i*N] to data[(i+1) * N].
+ * @param clusterCentroids Pointer to an array of length K*N representing the K 
+ *     different N dimensional cluster centroids. The data is laid out in
+ *     the same way as explained above for data.
+ * @param clusterAssignments Pointer to an array of length M representing the
+ *     cluster assignments of each data point, where clusterAssignments[i] = j
+ *     indicates that data point i is closest to cluster centroid j.
+ * @param M The number of data points to cluster.
+ * @param N The dimensionality of the data points.
+ * @param K The number of cluster centroids.
+ * @param epsilon The algorithm is said to have converged when
+ *     |currCost[i] - prevCost[i]| < epsilon for all i where i = 0, 1, ..., K-1
+ */
+void kMeansThread(double *data, double *clusterCentroids, int *clusterAssignments,
+               int M, int N, int K, double epsilon) {
+
+  // Used to track convergence
+  double *prevCost = new double[K];
+  double *currCost = new double[K];
+
+  // The WorkerArgs array is used to pass inputs to and return output from
+  // functions.
+  WorkerArgs args;
+  args.data = data;
+  args.clusterCentroids = clusterCentroids;
+  args.clusterAssignments = clusterAssignments;
+  args.currCost = currCost;
+  args.M = M;
+  args.N = N;
+  args.K = K;
+
+  // Initialize arrays to track cost
+  for (int k = 0; k < K; k++) {
+    prevCost[k] = 1e30;
+    currCost[k] = 0.0;
+  }
+
+  /* Main K-Means Algorithm Loop */
+  int iter = 0;
+  while (!stoppingConditionMet(prevCost, currCost, epsilon, K)) {
+    // Update cost arrays (for checking convergence criteria)
+    for (int k = 0; k < K; k++) {
+      prevCost[k] = currCost[k];
+    }
+
+    // Setup args struct
+    args.start = 0;
+    args.end = K;
+
+    computeAssignments(&args);
+    computeCentroids(&args);
+    computeCost(&args);
+
+    iter++;
+  }
+
+  delete[] currCost;
+  delete[] prevCost;
+}
+
+
+
+================================================
+FILE: prog6_kmeans/main.cpp
+================================================
+#include <algorithm>
+#include <iostream>
+#include <math.h>
+#include <random>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string>
+
+#include "CycleTimer.h"
+
+#define SEED 7
+#define SAMPLE_RATE 1e-2
+
+using namespace std;
+
+// Main compute functions
+extern void kMeansThread(double *data, double *clusterCentroids,
+                      int *clusterAssignments, int M, int N, int K,
+                      double epsilon);
+extern double dist(double *x, double *y, int nDim);
+
+// Utilities
+extern void logToFile(string filename, double sampleRate, double *data,
+                      int *clusterAssignments, double *clusterCentroids, int M,
+                      int N, int K);
+extern void writeData(string filename, double *data, double *clusterCentroids,
+                      int *clusterAssignments, int *M_p, int *N_p, int *K_p,
+                      double *epsilon_p);
+extern void readData(string filename, double **data, double **clusterCentroids,
+                     int **clusterAssignments, int *M_p, int *N_p, int *K_p,
+                     double *epsilon_p);
+
+// Functions for generating data
+double randDouble() {
+  return static_cast<double>(rand()) / static_cast<double>(RAND_MAX);
+}
+
+void initData(double *data, int M, int N) {
+  int K = 10;
+  double *centers = new double[K * N];
+
+  // Gaussian noise
+  double mean = 0.0;
+  double stddev = 0.5;
+  std::default_random_engine generator;
+  std::normal_distribution<double> normal_dist(mean, stddev);
+
+  // Randomly create points to center data around
+  for (int k = 0; k < K; k++) {
+    for (int n = 0; n < N; n++) {
+      centers[k * N + n] = randDouble();
+    }
+  }
+
+  // Even clustering
+  for (int m = 0; m < M; m++) {
+    int startingPoint = rand() % K; // Which center to start from
+    for (int n = 0; n < N; n++) {
+      double noise = normal_dist(generator);
+      data[m * N + n] = centers[startingPoint * N + n] + noise;
+    }
+  }
+
+  delete[] centers;
+}
+
+void initCentroids(double *clusterCentroids, int K, int N) {
+  // Initialize centroids (close together - makes it a bit more interesting)
+  for (int n = 0; n < N; n++) {
+    clusterCentroids[n] = randDouble();
+  }
+  for (int k = 1; k < K; k++) {
+    for (int n = 0; n < N; n++) {
+      clusterCentroids[k * N + n] =
+          clusterCentroids[n] + (randDouble() - 0.5) * 0.1;
+    }
+  }
+}
+
+int main() {
+  srand(SEED);
+
+  int M, N, K;
+  double epsilon;
+
+  double *data;
+  double *clusterCentroids;
+  int *clusterAssignments;
+
+  // NOTE: we will grade your submission using the data in data.dat
+  // which is read by this function
+  readData("./data.dat", &data, &clusterCentroids, &clusterAssignments, &M, &N,
+           &K, &epsilon);
+
+  // NOTE: if you want to generate your own data (for fun), you can use the
+  // below code
+  /*
+  M = 1e6;
+  N = 100;
+  K = 3;
+  epsilon = 0.1;
+
+  data = new double[M * N];
+  clusterCentroids = new double[K * N];
+  clusterAssignments = new int[M];
+
+  // Initialize data
+  initData(data, M, N);
+  initCentroids(clusterCentroids, K, N);
+
+  // Initialize cluster assignments
+  for (int m = 0; m < M; m++) {
+    double minDist = 1e30;
+    int bestAssignment = -1;
+    for (int k = 0; k < K; k++) {
+      double d = dist(&data[m * N], &clusterCentroids[k * N], N);
+      if (d < minDist) {
+        minDist = d;
+        bestAssignment = k;
+      }
+    }
+    clusterAssignments[m] = bestAssignment;
+  }
+
+  // Uncomment to generate data file
+  // writeData("./data.dat", data, clusterCentroids, clusterAssignments, &M, &N,
+  //           &K, &epsilon);
+  */
+
+  printf("Running K-means with: M=%d, N=%d, K=%d, epsilon=%f\n", M, N,
+         K, epsilon);
+
+  // Log the starting state of the algorithm
+  logToFile("./start.log", SAMPLE_RATE, data, clusterAssignments,
+            clusterCentroids, M, N, K);
+
+  double startTime = CycleTimer::currentSeconds();
+  kMeansThread(data, clusterCentroids, clusterAssignments, M, N, K, epsilon);
+  double endTime = CycleTimer::currentSeconds();
+  printf("[Total Time]: %.3f ms\n", (endTime - startTime) * 1000);
+
+  // Log the end state of the algorithm
+  logToFile("./end.log", SAMPLE_RATE, data, clusterAssignments,
+            clusterCentroids, M, N, K);
+
+  delete[] data;
+  delete[] clusterCentroids;
+  delete[] clusterAssignments;
+  return 0;
+}
+
+
+================================================
+FILE: prog6_kmeans/Makefile
+================================================
+CXX=g++ -m64 -march=native
+CXXFLAGS=-I../common -Iobjs/ -O3 -Wall
+
+
+APP_NAME=kmeans
+OBJDIR=objs
+COMMONDIR=../common
+
+PPM_CXX=$(COMMONDIR)/ppm.cpp
+PPM_OBJ=$(addprefix $(OBJDIR)/, $(subst $(COMMONDIR)/,, $(PPM_CXX:.cpp=.o)))
+
+TASKSYS_CXX=$(COMMONDIR)/tasksys.cpp
+TASKSYS_LIB=-lpthread
+TASKSYS_OBJ=$(addprefix $(OBJDIR)/, $(subst $(COMMONDIR)/,, $(TASKSYS_CXX:.cpp=.o)))
+
+default: $(APP_NAME)
+
+.PHONY: dirs clean
+
+dirs:
+		/bin/mkdir -p $(OBJDIR)/
+
+clean:
+		/bin/rm -rf $(OBJDIR) *.ppm *.log *.png *~ $(APP_NAME)
+
+OBJS=$(OBJDIR)/main.o $(OBJDIR)/kmeansThread.o $(OBJDIR)/utils.o $(PPM_OBJ) $(TASKSYS_OBJ)
+
+$(APP_NAME): dirs $(OBJS)
+		$(CXX) $(CXXFLAGS) -o $@ $(OBJS) -lm $(TASKSYS_LIB)
+
+$(OBJDIR)/%.o: %.cpp
+		$(CXX) $< $(CXXFLAGS) -c -o $@
+
+$(OBJDIR)/%.o: $(COMMONDIR)/%.cpp
+	$(CXX) $< $(CXXFLAGS) -c -o $@
+
+$(OBJDIR)/main.o: $(COMMONDIR)/CycleTimer.h
+
+
+================================================
+FILE: prog6_kmeans/plot.py
+================================================
+import os
+
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+
+START_LOGFILE = "./start.log"
+END_LOGFILE = "./end.log"
+START_PLOTFILE = "./start.png"
+END_PLOTFILE = "./end.png"
+
+for title, logfile, plotfile in [("Start", START_LOGFILE, START_PLOTFILE), ("End", END_LOGFILE, END_PLOTFILE)]:
+
+    assert os.path.exists(logfile), "Log file doesn't exist, try running the program."
+
+    with open(logfile) as f:
+        # Read header
+        M, N, K = f.readline().split(',')
+        M, N, K = int(M), int(N), int(K)
+
+        # Read data
+        data = []
+        cluster_assignments = []
+        cluster_centroids = []
+
+        for line in f.readlines():
+            prefix = line.split(':')[0].split(' ')[0]
+            if prefix == "Example":
+                cluster_assignments.append(line.split(':')[0].split(' ')[-1])
+                datapoint = line.split(':')[1].strip().split(' ')
+                data.append(np.asarray(datapoint, dtype=float))
+                line = f.readline()
+            elif prefix == "Centroid":
+                centroid = line.split(':')[1].strip().split(' ')
+                cluster_centroids.append(np.asarray(centroid, dtype=float))
+
+    # Main data containers
+    data = np.stack(data)
+    cluster_assignments = np.asarray(cluster_assignments, dtype=int)
+    cluster_centroids = np.stack(cluster_centroids)
+
+    # Dimensionality reduction so we can plot the clusters
+    pca = PCA(n_components=2)
+    pca.fit(data)
+
+    data_2d = pca.transform(data)
+    cluster_centroids_2d = pca.transform(cluster_centroids)
+
+    plt.subplots(figsize=(10,8))
+    plt.scatter(data_2d[:,0], data_2d[:,1], c=cluster_assignments)
+    plt.scatter(cluster_centroids_2d[:,0], cluster_centroids_2d[:,1], c='r', marker='*', edgecolors='black', s=1000)
+    plt.title(f"K-Means: {title}")
+
+    plt.savefig(plotfile)
+
+
+================================================
+FILE: prog6_kmeans/requirements.txt
+================================================
+numpy>=1.19.5
+matplotlib~=3.6.0
+scikit-learn>=1.1.2
+
+
+
+================================================
+FILE: prog6_kmeans/utils.cpp
+================================================
+#include <fstream>
+#include <iostream>
+#include <stdio.h>
+#include <string>
+
+using namespace std;
+
+void logToFile(string filename, double sampleRate, double *data,
+               int *clusterAssignments, double *clusterCentroids, int M, int N,
+               int K) {
+  ofstream logFile;
+  logFile.open(filename);
+
+  // Write header
+  logFile << M << "," << N << "," << K << endl;
+
+  // Log data points
+  for (int m = 0; m < M; m++) {
+    if (static_cast<double>(rand()) / static_cast<double>(RAND_MAX) <
+        sampleRate) {
+      logFile << "Example " << m << ", cluster " << clusterAssignments[m]
+              << ": ";
+      for (int n = 0; n < N; n++) {
+        logFile << data[m * N + n] << " ";
+      }
+      logFile << "\n";
+    }
+  }
+
+  // Log centroids
+  for (int k = 0; k < K; k++) {
+    logFile << "Centroid " << k << ": ";
+    for (int n = 0; n < N; n++) {
+      logFile << clusterCentroids[k * N + n] << " ";
+    }
+    logFile << "\n";
+  }
+
+  logFile.close();
+}
+
+void writeData(string filename, double *data, double *clusterCentroids,
+               int *clusterAssignments, int *M_p, int *N_p, int *K_p,
+               double *epsilon_p) {
+  int M = *M_p;
+  int N = *N_p;
+  int K = *K_p;
+
+  ofstream dataFile(filename, ios::out | ios::binary);
+  dataFile.write((char *)M_p, sizeof(int));
+  dataFile.write((char *)N_p, sizeof(int));
+  dataFile.write((char *)K_p, sizeof(int));
+  dataFile.write((char *)epsilon_p, sizeof(double));
+  dataFile.write((char *)data, sizeof(double) * M * N);
+  dataFile.write((char *)clusterCentroids, sizeof(double) * K * N);
+  dataFile.write((char *)clusterAssignments, sizeof(int) * M);
+  dataFile.close();
+}
+
+void readData(string filename, double **data, double **clusterCentroids,
+              int **clusterAssignments, int *M_p, int *N_p, int *K_p,
+              double *epsilon_p) {
+  cout << "Reading data.dat..." << endl;
+
+  ifstream dataFile(filename, ios::in | ios::binary);
+  if (dataFile.fail()) {
+      cout << "Couldn't open the file! Please make sure data.dat exists... Exiting." << endl;
+      exit(EXIT_FAILURE);
+  }
+
+  dataFile.read((char *)M_p, sizeof(int));
+  dataFile.read((char *)N_p, sizeof(int));
+  dataFile.read((char *)K_p, sizeof(int));
+  dataFile.read((char *)epsilon_p, sizeof(double));
+
+  int M = *M_p;
+  int N = *N_p;
+  int K = *K_p;
+
+  *data = new double[M * N];
+  *clusterCentroids = new double[K * N];
+  *clusterAssignments = new int[M];
+
+  dataFile.read((char *)*data, sizeof(double) * M * N);
+  dataFile.read((char *)*clusterCentroids, sizeof(double) * K * N);
+  dataFile.read((char *)*clusterAssignments, sizeof(int) * M);
+  dataFile.close();
+}
+

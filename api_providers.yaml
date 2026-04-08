@@ -1,0 +1,71 @@
+# BioAgent API 供应商配置
+# 启动时会自动检测可用性，按列表顺序展示给用户选择
+# 修改后重启即可生效
+
+providers:
+  # ========== 本地 Ollama ==========
+  - name: "本地 Ollama"
+    type: ollama          # ollama 或 openai_compatible
+    base_url: "http://localhost:11434"
+    api_key: ""           # 本地模型不需要
+    models:
+      - "qwen3:4b"
+      - "qwen3:8b"
+      - "qwen3:32b"
+      - "llama3:8b"
+      - "gemma2:9b"
+    auto_discover: true  # 设为 true 则启动时自动拉取本地已下载模型列表
+
+  # ========== Minimax ==========
+  - name: "Minimax"
+    type: openai_compatible
+    base_url: "https://api.minimaxi.com/v1"
+    api_key: "sk-cp-F05kDTJRe2pIPQ1O31nXxU-6dQm2pxGxAHHXHU3LCMJ0CDH8s5c_bbivfyX2ei-2j6UPrkKLAuZ14T9_Yz_5cevrK0_Fftt_IpFhZwMn6uVJ58Px84nO0ug"
+    models:
+      - "MiniMax-M2.7"
+    auto_discover: true
+
+  # ========== 心流 (iflow.cn) ==========
+  - name: "心流 API"
+    type: openai_compatible
+    base_url: "https://apis.iflow.cn/v1"
+    api_key: "sk-a53bc75d6a2003fc593689e7e9cfbcfe"
+    models:
+      - "qwen3-32b"
+      - "qwen3-max"
+      - "deepseek-r1"
+      - "deepseek-v3.2"
+      - "kimi-k2"
+    # auto_discover: true  # 设为 true 则启动时自动拉取 API 支持的模型列表
+
+  # ========== 硅基流动 (siliconflow.cn) ==========
+  - name: "硅基流动"
+    type: openai_compatible
+    base_url: "https://cloud.siliconflow.cn/v1"
+    api_key: "sk-ichsidtksuazcnnfjtjyjlolwpjiquxicsotlwbshfpjphgb"
+    models:
+      - "deepseek-ai/DeepSeek-V3.2"
+      - "Qwen/Qwen3.5-397B-A17B"
+      - "THUDM/GLM-4-9b-chat"
+    auto_discover: false
+
+  # ========== OpenAI ==========
+  # - name: "OpenAI"
+  #   type: openai_compatible
+  #   base_url: "https://api.openai.com/v1"
+  #   api_key: "sk-xxx"
+  #   models:
+  #     - "gpt-4o-mini"
+  #     - "gpt-4o"
+  #   auto_discover: true
+
+  # ========== DeepSeek 官方 ==========
+  # - name: "DeepSeek"
+  #   type: openai_compatible
+  #   base_url: "https://api.deepseek.com/v1"
+  #   api_key: "sk-xxx"
+  #   models:
+  #     - "deepseek-chat"
+  #     - "deepseek-reasoner"
+  #   auto_discover: true
+

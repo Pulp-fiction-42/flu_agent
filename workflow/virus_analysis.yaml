@@ -1,0 +1,58 @@
+name: virus_analysis
+description: "病毒全流程分析：fastq质控 → de novo组装 → 序列统计 → 病毒鉴定"
+triggers:
+  - 病毒分析
+  - 流程分析
+  - 分析fastq
+  - 病毒鉴定
+  - 全流程
+params:
+  - name: input_file
+    type: string
+    required: true
+    description: "输入的 FASTQ 文件路径"
+  - name: output_dir
+    type: string
+    required: false
+    description: "输出目录（默认为 workflow_output/virus_analysis_<时间>）"
+steps:
+  - name: quality_control
+    description: "使用 fastp 进行质控和接头去除"
+    tool: fastp_qc
+    params:
+      input_file: "${params.input_file}"
+      output_dir: "${params.output_dir}"
+    on_error: abort
+
+  - name: assembly
+    description: "使用 SPAdes 进行 de novo 基因组组装"
+    tool: spades_assembly
+    params:
+      input_file: "${params.input_file}"
+      output_dir: "${params.output_dir}/spades_output"
+    on_error: abort
+
+  - name: sequence_stats
+    description: "对组装结果进行序列统计"
+    tool: seqkit_stats
+    params:
+      file: "${assembly.output}"
+    on_error: continue
+
+  - name: virus_identify
+    description: "使用 BLASTn 鉴定病毒种类"
+    tool: blastn_search
+    params:
+      query: "${assembly.output}"
+      db: "nt"
+      max_target_seqs: 10
+      output_dir: "${params.output_dir}/blastn_output"
+    on_error: continue
+
+  - name: quality_report
+    description: "使用 MultiQC 汇总质控报告"
+    tool: multiqc_report
+    params:
+      input_dir: "${params.output_dir}"
+      output_dir: "${params.output_dir}/multiqc_report"
+    on_error: continue

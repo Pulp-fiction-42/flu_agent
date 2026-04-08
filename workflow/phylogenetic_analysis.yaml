@@ -1,0 +1,56 @@
+name: phylogenetic_analysis
+description: "系统发育分析流程：多序列比对 → 比对裁剪 → 构建系统发育树"
+triggers:
+  - 系统发育
+  - 进化分析
+  - 进化树
+  - 系统发育树
+  - phylogenetic
+params:
+  - name: input_file
+    type: string
+    required: true
+    description: "输入多序列 FASTA 文件"
+  - name: output_dir
+    type: string
+    required: false
+    description: "输出目录"
+  - name: strategy
+    type: string
+    required: false
+    description: "MAFFT 比对策略: auto（自动）, localpair（精确）, globalpair（快速）"
+steps:
+  - name: sequence_stats
+    description: "统计输入序列基本信息"
+    tool: seqkit_stats
+    params:
+      file: "${params.input_file}"
+    on_error: continue
+
+  - name: mafft_align
+    description: "使用 MAFFT 进行多序列比对"
+    tool: mafft_align
+    params:
+      input_file: "${params.input_file}"
+      output_dir: "${params.output_dir}"
+      strategy: "${params.strategy}"
+    on_error: abort
+
+  - name: trimal_trim
+    description: "使用 trimAl 裁剪低质量比对区域"
+    tool: trimal_trim
+    params:
+      input_file: "${mafft_align.output}"
+      output_dir: "${params.output_dir}"
+      method: "automated"
+    on_error: continue
+
+  - name: iqtree_build
+    description: "使用 IQ-TREE2 构建最大似然系统发育树"
+    tool: iqtree_build
+    params:
+      input_file: "${trimal_trim.output}"
+      output_dir: "${params.output_dir}"
+      bootstrap: 1000
+      bootstrap_method: "ufboot"
+    on_error: abort

@@ -1,0 +1,47 @@
+name: quality_check
+description: "FASTQ 质控报告流水线：fastp质控 → fastqc报告 → multiqc汇总 → 序列统计"
+triggers:
+  - 质控
+  - 质量检查
+  - QC
+  - quality check
+params:
+  - name: input_file
+    type: string
+    required: true
+    description: "输入的 FASTQ 文件路径"
+  - name: output_dir
+    type: string
+    required: false
+    description: "输出目录"
+steps:
+  - name: fastp_qc
+    description: "使用 fastp 进行质控、接头去除和质量过滤"
+    tool: fastp_qc
+    params:
+      input_file: "${params.input_file}"
+      output_dir: "${params.output_dir}"
+    on_error: abort
+
+  - name: fastqc_report
+    description: "使用 FastQC 生成详细质控报告"
+    tool: fastqc_report
+    params:
+      files: "${params.input_file}"
+      output_dir: "${params.output_dir}/fastqc_output"
+    on_error: continue
+
+  - name: seqkit_stats
+    description: "使用 seqkit 统计序列基本信息"
+    tool: seqkit_stats
+    params:
+      file: "${params.input_file}"
+    on_error: continue
+
+  - name: multiqc_summary
+    description: "使用 MultiQC 汇总所有质控报告"
+    tool: multiqc_report
+    params:
+      input_dir: "${params.output_dir}"
+      output_dir: "${params.output_dir}/multiqc_report"
+    on_error: continue

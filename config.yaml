@@ -1,0 +1,172 @@
+# BioAgent 配置文件
+# 参考 POPGENAGENT 的 config.yaml.example
+
+# ========== LLM 配置 ==========
+# 默认模型配置（可被 api_providers.yaml 中的用户选择覆盖）
+llm:
+  # --- Minimax API（默认） ---
+  base_url: "https://api.minimaxi.com/v1"
+  model: "MiniMax-M2.7"
+  api_key: "sk-cp-F05kDTJRe2pIPQ1O31nXxU-6dQm2pxGxAHHXHU3LCMJ0CDH8s5c_bbivfyX2ei-2j6UPrkKLAuZ14T9_Yz_5cevrK0_Fftt_IpFhZwMn6uVJ58Px84nO0ug"
+  temperature: 0.7
+  timeout: 800
+  # max_tokens: 4096
+
+  # --- 本地 Ollama 备用（注释掉以防API不可用） ---
+  # base_url: "http://localhost:11434"
+  # model: "qwen3:4b"
+  # api_key: ""
+  # temperature: 0.7
+  # timeout: 800
+  # max_tokens: 4096
+
+# ========== 路径配置 ==========
+paths:
+  tools_dir: "tools"
+  knowledge_dir: "knowledge"
+  workflow_dir: "workflow"
+  data_dir: "data"
+  reports_dir: "reports"
+  example_dir: "example"
+
+# ========== 生信工具路径配置 ==========
+# 格式: "工具名: 路径"
+# 引擎启动时会自动检测可用性
+tools:
+  # 序列处理
+  seqkit: "/home/bgi-chao/miniconda3/envs/bioagent/bin/seqkit"
+
+  # 质控
+  fastp: "/home/bgi-chao/miniconda3/envs/bioagent/bin/fastp"
+  fastqc: "/home/bgi-chao/miniconda3/envs/bioagent/bin/fastqc"
+  multiqc: "/Users/guojd/opt/anaconda3/envs/mamba_env/bin/multiqc"
+  cutadapt: "/Users/guojd/opt/anaconda3/envs/mamba_env/bin/cutadapt"
+
+  # 组装
+  spades: "/Users/guojd/opt/anaconda3/envs/mamba_env/bin/spades.py"
+  megahit: "/Users/guojd/opt/anaconda3/envs/mamba_env/bin/megahit"
+
+  # 比对与排序
+  bwa: "/Users/guojd/opt/anaconda3/envs/mamba_env/bin/bwa"
+  minimap2: "/Users/guojd/opt/anaconda3/envs/mamba_env/bin/minimap2"
+  samtools: "/Users/guojd/opt/anaconda3/envs/mamba_env/bin/samtools"
+  blastn: "/Users/guojd/opt/anaconda3/envs/mamba_env/bin/blastn"
+  diamond: "/Users/guojd/opt/anaconda3/bin/diamond"
+
+  # 分类
+  kraken2: "/Users/guojd/opt/anaconda3/envs/mamba_env/bin/kraken2"
+
+  # 多序列比对
+  mafft: "/Users/guojd/opt/anaconda3/envs/mamba_env/envs/tree/bin/mafft"
+  trimal: "/Users/guojd/opt/anaconda3/envs/mamba_env/envs/tree/bin/trimal"
+
+  # 蛋白结构比对
+  hhblits: "/Users/guojd/opt/anaconda3/envs/hhsuite/bin/hhblits"
+  hhsearch: "/Users/guojd/opt/anaconda3/envs/hhsuite/bin/hhsearch"
+  hhfilter: "/Users/guojd/opt/anaconda3/envs/hhsuite/bin/hhfilter"
+
+  # 进化分析
+  iqtree2: "/Users/guojd/opt/anaconda3/envs/mamba_env/bin/iqtree2"
+  codeml: "/Users/guojd/vscode/softwares/paml/bin/codeml"
+  baseml: "/Users/guojd/vscode/softwares/paml/bin/baseml"
+  basemlg: "/Users/guojd/vscode/softwares/paml/bin/basemlg"
+  evolver: "/Users/guojd/vscode/softwares/paml/bin/evolver"
+  mcmctree: "/Users/guojd/vscode/softwares/paml/bin/mcmctree"
+  yn00: "/Users/guojd/vscode/softwares/paml/bin/yn00"
+
+  # 分类学
+  taxonkit: "/Users/guojd/opt/anaconda3/envs/mamba_env/bin/taxonkit"
+
+  # 其他
+  swarm: "/Users/guojd/swarm/bin/swarm"
+  circos: "/Users/guojd/software/circos/current/bin/circos"
+
+# ========== Agent 配置 ==========
+agent:
+  # 最大工具调用轮次
+  max_tool_rounds: 10
+  # 是否启用 Planner-Executor 模式（默认关闭，模型升级后可启用）
+  enable_planner: false
+  # 简单任务阈值（工具调用数 >= 此值时启用 Planner）
+  planner_threshold: 2
+  # 默认线程数
+  default_threads: 4
+  # 命令执行超时（秒）
+  command_timeout: 600
+
+# ========== Web UI 配置 ==========
+web:
+  enable: false
+  port: 7860
+  share: false
+  debug: false
+
+# ========== 数据库配置 ==========
+database:
+  type: "sqlite"
+  path: "data/sessions/bioagent.db"
+
+# ========== 搜索配置 ==========
+search:
+  enable: true
+  timeout: 30
+  max_results: 5
+
+# ========== 文本处理配置 ==========
+text:
+  enable: true
+  max_length: 5000
+  pdf_library: "pypdf2"  # pypdf2 或 pdfplumber
+
+# ========== 知识库配置 ==========
+knowledge:
+  enable: true
+  vitaldb_enable: true
+  user_upload_dir: "knowledge/user_uploaded"
+  search_fallback: true  # 知识库无结果时自动搜索
+
+# ========== 多角色 Agent 配置 ==========
+multi_agent:
+  enable: true  # 是否启用三角色模式（Ask-Plan-Craft）
+  calibration_enable: true  # 启用"校准弃权"机制
+  # Ask Agent：需求理解与多轮澄清
+  ask:
+    max_rounds: 3  # 最大澄清轮次
+  # Plan Agent：技术路线规划
+  plan:
+    validate_dataflow: true  # 是否校验数据流
+  # Craft Agent：任务执行
+  craft:
+    max_tool_rounds: 10
+    retry_on_fail: true
+
+# ========== Docker 容器化配置 (V3 增强) ==========
+docker:
+  enable: true  # 是否启用 Docker 执行器
+  base_dir: "/tmp/fluagent/docker"  # 容器数据目录
+  timeout: 3600  # 执行超时（秒）
+  auto_pull: true  # 自动拉取镜像
+
+# ========== Nextflow 配置 (V3 增强) ==========
+nextflow:
+  enable: true  # 是否启用 Nextflow 模板
+  templates_dir: "workflow/templates"  # 模板目录
+  work_dir: "/tmp/fluagent/nextflow"  # Nextflow 工作目录
+
+# ========== 多用户配置 (V3 增强) ==========
+multiuser:
+  enable: true  # 是否启用多用户模式
+  session_timeout: 3600  # 会话超时（秒）
+
+# ========== 任务队列配置 (V3 新增) ==========
+task_queue:
+  enable: true  # 是否启用异步任务队列
+  backend: "celery"  # celery 或 memory（内存）
+  broker_url: "redis://localhost:6379/0"  # Celery broker URL
+  result_backend: "redis://localhost:6379/0"  # Celery result backend
+
+# ========== 日志配置 ==========
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "bioagent.log"
