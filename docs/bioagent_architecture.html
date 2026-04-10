@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BioAgent 完整架构图</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #f8f7f4; padding: 24px; color: #1a1a18; }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
+  .subtitle { font-size: 13px; color: #5f5e5a; margin-bottom: 20px; }
+
+  /* Legend */
+  .legend { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; padding: 12px 16px; background: #fff; border-radius: 10px; border: 1px solid #e0ddd6; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #444; }
+  .badge { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+  .badge-existing { background: #9FE1CB; border: 1.5px solid #0F6E56; }
+  .badge-new { background: #FAECE7; border: 1.5px dashed #D85A30; }
+  .badge-refactor { background: #EEEDFE; border: 1.5px dashed #534AB7; }
+  .badge-ext { background: #E1F5EE; border: 1.5px solid #0F6E56; }
+
+  /* Layers */
+  .layer { margin-bottom: 10px; }
+  .layer-label { font-size: 11px; color: #888780; letter-spacing: 0.8px; text-transform: uppercase; margin-bottom: 6px; padding-left: 2px; }
+
+  .layer-box { border-radius: 12px; padding: 14px 14px 14px 14px; }
+  .layer-box.existing { background: #E1F5EE; border: 1.5px solid #0F6E56; }
+  .layer-box.new      { background: #FAECE7; border: 2px dashed #D85A30; }
+  .layer-box.refactor { background: #EEEDFE; border: 2px dashed #534AB7; }
+  .layer-box.external { background: #E1F5EE; border: 1.5px solid #1D9E75; }
+
+  .layer-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+  .layer-title.existing { color: #085041; }
+  .layer-title.new      { color: #993C1D; }
+  .layer-title.refactor { color: #3C3489; }
+
+  /* Cards grid */
+  .cards { display: flex; gap: 10px; flex-wrap: wrap; }
+  .card { border-radius: 8px; padding: 10px 12px; min-width: 130px; flex: 1; }
+  .card.existing { background: #5DCAA5; border: 1px solid #085041; }
+  .card.new      { background: #F0997B; border: 1px solid #993C1D; }
+  .card.refactor { background: #AFA9EC; border: 1px solid #3C3489; }
+  .card.external-card { background: #9FE1CB; border: 1px solid #085041; }
+
+  .card-title { font-size: 12px; font-weight: 600; margin-bottom: 3px; }
+  .card.existing .card-title, .card.external-card .card-title { color: #04342C; }
+  .card.new .card-title      { color: #4A1B0C; }
+  .card.refactor .card-title { color: #26215C; }
+
+  .card-desc { font-size: 11px; line-height: 1.5; }
+  .card.existing .card-desc, .card.external-card .card-desc { color: #085041; }
+  .card.new .card-desc      { color: #712B13; }
+  .card.refactor .card-desc { color: #3C3489; }
+
+  /* Arrow connector between layers */
+  .connector { text-align: center; padding: 2px 0; font-size: 18px; color: #B4B2A9; line-height: 1; }
+
+  /* Sub-row for nested cards */
+  .card-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .card-row:last-child { margin-bottom: 0; }
+
+  /* Config row at the bottom */
+  .config-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+  .config-card { border-radius: 8px; padding: 10px 12px; flex: 1; min-width: 160px; }
+
+  /* Tags */
+  .tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 99px; margin-top: 4px; }
+  .tag-existing { background: #085041; color: #9FE1CB; }
+  .tag-new      { background: #993C1D; color: #F5C4B3; }
+  .tag-refactor { background: #3C3489; color: #CECBF6; }
+
+  @media (max-width: 600px) { .cards { flex-direction: column; } }
+</style>
+</head>
+<body>
+<h1>BioAgent 完整系统架构</h1>
+<p class="subtitle">Next.js + FastAPI + Python BioAgent Core · 绿色=已有，橙色=待开发，紫色=改造现有</p>
+
+<!-- Legend -->
+<div class="legend">
+  <div class="legend-item"><div class="badge badge-existing"></div>已有代码（不改动）</div>
+  <div class="legend-item"><div class="badge badge-new"></div>待开发</div>
+  <div class="legend-item"><div class="badge badge-refactor"></div>改造现有代码</div>
+  <div class="legend-item"><div class="badge badge-ext"></div>外部服务（配置即用）</div>
+</div>
+
+<!-- LAYER 1: Frontend -->
+<div class="layer">
+  <div class="layer-label">Layer 1 · Frontend · 待开发</div>
+  <div class="layer-box new">
+    <div class="layer-title new">Next.js + React + Tailwind + shadcn/ui + Vercel AI SDK</div>
+    <div class="cards">
+      <div class="card new">
+        <div class="card-title">Chat UI</div>
+        <div class="card-desc">useChat hook<br>Streaming 逐字渲染<br>工具调用状态气泡<br>对话历史展示</div>
+        <span class="tag tag-new">新建</span>
+      </div>
+      <div class="card new">
+        <div class="card-title">文件上传面板</div>
+        <div class="card-desc">FASTA / FASTQ 上传<br>大文件分片处理<br>上传进度 &amp; 校验<br>已上传文件列表</div>
+        <span class="tag tag-new">新建</span>
+      </div>
+      <div class="card new">
+        <div class="card-title">任务监控面板</div>
+        <div class="card-desc">实时日志流（SSE）<br>工具调用进度条<br>耗时长任务状态<br>任务取消按钮</div>
+        <span class="tag tag-new">新建</span>
+      </div>
+      <div class="card new">
+        <div class="card-title">结果可视化</div>
+        <div class="card-desc">序列质量曲线<br>系统发育树展示<br>统计图表 (Recharts)<br>报告下载入口</div>
+        <span class="tag tag-new">新建</span>
+      </div>
+      <div class="card new">
+        <div class="card-title">模型 &amp; 配置</div>
+        <div class="card-desc">Provider 下拉切换<br>参数调节面板<br>工具可用性检测<br>会话管理</div>
+        <span class="tag tag-new">新建</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="connector">↕</div>
+
+<!-- LAYER 2: BFF -->
+<div class="layer">
+  <div class="layer-label">Layer 2 · BFF / API Gateway · 待开发</div>
+  <div class="layer-box new">
+    <div class="layer-title new">Next.js API Routes（BFF 层，对接前端与 Python 后端）</div>
+    <div class="cards">
+      <div class="card new">
+        <div class="card-title">/api/chat</div>
+        <div class="card-desc">接收对话请求<br>→ SSE stream 转发<br>工具调用事件推送</div>
+      </div>
+      <div class="card new">
+        <div class="card-title">/api/upload</div>
+        <div class="card-desc">文件转发到 FastAPI<br>返回 file_id<br>多格式校验</div>
+      </div>
+      <div class="card new">
+        <div class="card-title">/api/tasks/[id]</div>
+        <div class="card-desc">轮询任务状态<br>获取日志片段<br>结果下载 URL</div>
+      </div>
+      <div class="card new">
+        <div class="card-title">/api/providers</div>
+        <div class="card-desc">查询可用 LLM<br>触发连通性检测<br>切换 Provider</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="connector">↕</div>
+
+<!-- LAYER 3: FastAPI -->
+<div class="layer">
+  <div class="layer-label">Layer 3 · Python Backend · 改造 web/app.py（Gradio → FastAPI）</div>
+  <div class="layer-box refactor">
+    <div class="layer-title refactor">FastAPI  server.py（替换 web/app.py 的 Gradio 实现，核心逻辑不动）</div>
+    <div class="cards">
+      <div class="card refactor">
+        <div class="card-title">StreamingResponse</div>
+        <div class="card-desc">SSE 事件流<br>工具调用 → 事件<br>结果 → 事件<br>错误处理</div>
+        <span class="tag tag-refactor">改造</span>
+      </div>
+      <div class="card refactor">
+        <div class="card-title">TaskManager</div>
+        <div class="card-desc">异步任务队列<br>长任务状态管理<br>超时 &amp; 取消支持<br>日志缓冲</div>
+        <span class="tag tag-new">新建</span>
+      </div>
+      <div class="card refactor">
+        <div class="card-title">UploadHandler</div>
+        <div class="card-desc">大文件接收<br>写入 data/uploads/<br>文件 ID 映射<br>清理策略</div>
+        <span class="tag tag-new">新建</span>
+      </div>
+      <div class="card refactor">
+        <div class="card-title">CORS + Auth</div>
+        <div class="card-desc">前端跨域配置<br>可选 Token 鉴权<br>速率限制<br>健康检查</div>
+        <span class="tag tag-new">新建</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="connector">↕</div>
+
+<!-- LAYER 4: Core -->
+<div class="layer">
+  <div class="layer-label">Layer 4 · Agent Core · 已有代码（完全不动）</div>
+  <div class="layer-box existing">
+    <div class="layer-title existing">core/  —  BioAgent 主控逻辑</div>
+    <div class="card-row">
+      <div class="card existing" style="flex:2; min-width:180px;">
+        <div class="card-title">agent.py  —  BioAgent 主控</div>
+        <div class="card-desc">
+          单轮 FC 循环（chat / chat_v2）<br>
+          max_tool_rounds 控制<br>
+          Ask-Plan-Craft 三角色模式<br>
+          工具结果回填消息链
+        </div>
+        <span class="tag tag-existing">✓ 已有</span>
+      </div>
+      <div class="card existing">
+        <div class="card-title">memory.py</div>
+        <div class="card-desc">SQLite 会话历史<br>用户画像<br>工具调用统计</div>
+        <span class="tag tag-existing">✓ 已有</span>
+      </div>
+      <div class="card existing">
+        <div class="card-title">prompts.py</div>
+        <div class="card-desc">系统提示词模板<br>三角色提示词<br>工具描述注入</div>
+        <span class="tag tag-existing">✓ 已有</span>
+      </div>
+    </div>
+    <div class="card-row">
+      <div class="card existing" style="flex:2;">
+        <div class="card-title">provider_manager.py</div>
+        <div class="card-desc">Ollama / 心流 / 硅基流动 / OpenAI 兼容<br>自动检测 + 用户选择<br>配置读取 api_providers.yaml</div>
+        <span class="tag tag-existing">✓ 已有</span>
+      </div>
+      <div class="card existing">
+        <div class="card-title">llm_client.py</div>
+        <div class="card-desc">统一 LLM 调用<br>Streaming 支持<br>重试逻辑</div>
+        <span class="tag tag-existing">✓ 已有</span>
+      </div>
+      <div class="card existing">
+        <div class="card-title">evaluator.py</div>
+        <div class="card-desc">执行结果评估<br>失败重试决策<br>质量打分</div>
+        <span class="tag tag-existing">✓ 已有</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="connector">↕</div>
+
+<!-- LAYER 5: Tools -->
+<div class="layer">
+  <div class="layer-label">Layer 5 · Tools · 已有代码（37 个工具，完全不动）</div>
+  <div class="layer-box existing">
+    <div class="layer-title existing">tools/  —  ToolRegistry + ToolBase（OpenAI Function Calling 协议）</div>
+    <div class="cards">
+      <div class="card existing">
+        <div class="card-title">序列处理</div>
+        <div class="card-desc">seqkit stats<br>seqkit fx2tab<br>seqkit grep/split</div>
+        <span class="tag tag-existing">✓ 已有</span>
+      </div>
+      <div class="card existing">
+        <div class="card-title">质量控制</div>
+        <div class="card-desc">fastp / fastqc<br>multiqc<br>cutadapt</div>
+        <span class="tag tag-existing">✓ 已有</span>
+      </div>
+      <div class="card existing">
+        <div class="card-title">比对 &amp; 组装</div>
+        <div class="card-desc">bwa / minimap2<br>samtools / blastn<br>spades / megahit</div>
+        <span class="tag tag-existing">✓ 已有</span>
+      </div>
+      <div class="card existing">
+        <div class="card-title">进化分析</div>
+        <div class="card-desc">iqtree2 / mafft<br>trimal / codeml<br>kraken2 分类</div>
+        <span class="tag tag-existing">✓ 已有</span>
+      </div>
+      <div class="card existing">
+        <div class="card-title">搜索 / 知识 / 文本</div>
+        <div class="card-desc">web_search<br>web_fetch / vitaldb<br>text_processing</div>
+        <span class="tag tag-existing">✓ 已有</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="connector">↕</div>
+
+<!-- LAYER 6: Workflow + Knowledge -->
+<div class="layer">
+  <div class="layer-label">Layer 6 · Workflow + Knowledge · 已有代码</div>
+  <div style="display:flex; gap:10px;">
+    <div class="layer-box existing" style="flex:1;">
+      <div class="layer-title existing">workflow/  —  YAML 工作流引擎</div>
+      <div class="cards">
+        <div class="card existing">
+          <div class="card-title">engine.py</div>
+          <div class="card-desc">WorkflowEngine<br>步骤编排 / 错误处理<br>参数插值</div>
+          <span class="tag tag-existing">✓ 已有</span>
+        </div>
+        <div class="card existing">
+          <div class="card-title">*.yaml 工作流</div>
+          <div class="card-desc">virus_analysis<br>quality_check<br>phylogenetic_analysis</div>
+          <span class="tag tag-existing">✓ 已有</span>
+        </div>
+      </div>
+    </div>
+    <div class="layer-box existing" style="flex:1;">
+      <div class="layer-title existing">knowledge/  —  领域知识库</div>
+      <div class="cards">
+        <div class="card existing">
+          <div class="card-title">知识文档</div>
+          <div class="card-desc">influenza_basics<br>seqkit_guide<br>workflow_guide</div>
+          <span class="tag tag-existing">✓ 已有</span>
+        </div>
+        <div class="card existing">
+          <div class="card-title">VITALdb</div>
+          <div class="card-desc">病毒工具知识库<br>RAG 检索支持<br>定期更新</div>
+          <span class="tag tag-existing">✓ 已有</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="connector">↕</div>
+
+<!-- LAYER 7: External Services -->
+<div class="layer">
+  <div class="layer-label">Layer 7 · External Services · 已有（配置即用）</div>
+  <div class="layer-box external">
+    <div class="layer-title existing">外部服务（api_providers.yaml + config.yaml 配置）</div>
+    <div class="cards">
+      <div class="card external-card">
+        <div class="card-title">Ollama（本地）</div>
+        <div class="card-desc">qwen3:4b / 32b<br>localhost:11434<br>隐私 / 零成本</div>
+        <span class="tag tag-existing">✓ 已有</span>
+      </div>
+      <div class="card external-card">
+        <div class="card-title">远程 LLM API</div>
+        <div class="card-desc">心流 / 硅基流动<br>OpenAI 兼容接口<br>qwen3-32b / deepseek</div>
+        <span class="tag tag-existing">✓ 已有</span>
+      </div>
+      <div class="card external-card">
+        <div class="card-title">生信命令行工具</div>
+        <div class="card-desc">seqkit / fastp / fastqc<br>IQ-Tree / MAFFT / BLAST<br>SPAdes / BWA / Kraken2</div>
+        <span class="tag tag-existing">✓ 已有</span>
+      </div>
+      <div class="card external-card">
+        <div class="card-title">SQLite + 文件系统</div>
+        <div class="card-desc">data/bioagent.db<br>data/uploads/<br>reports/ 输出</div>
+        <span class="tag tag-existing">✓ 已有</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Footer note -->
+<div style="margin-top:16px; padding:12px 16px; background:#fff; border-radius:10px; border:1px solid #e0ddd6; font-size:12px; color:#5f5e5a; line-height:1.7;">
+  <strong style="color:#1a1a18;">关键架构决策：</strong>
+  Next.js 前端 ←SSE/HTTP→ Next.js BFF ←HTTP→ FastAPI 后端 ←直接调用→ BioAgent Core（Python）<br>
+  Gradio（web/app.py）整体替换为 FastAPI server.py，约 150 行新代码，core/ + tools/ + workflow/ 完全不动。<br>
+  长任务（SPAdes 组装可达 30min）通过 TaskManager 异步化，前端 SSE 实时获取进度，避免请求超时。
+</div>
+
+</body>
+</html>
