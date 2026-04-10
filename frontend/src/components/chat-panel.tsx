@@ -6,13 +6,20 @@ import { getToken } from "@/lib/auth";
 import { useFiles } from "./file-context";
 import { getConversation, getModels, getTools, uploadFiles } from "@/lib/api";
 import {
-  Send, User, Bot, Loader2, Download, Copy, RotateCcw, Sparkles,
-  Paperclip, Cpu, Wrench, X, ChevronDown,
+  Send, User, Bot, Loader2, Copy, RotateCcw, Sparkles,
+  Paperclip, Cpu, Wrench, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -43,7 +50,6 @@ export function ChatPanel({ conversationId, initialMessage, initialModel }: Chat
   const [selectedModel, setSelectedModel] = useState("");
   const [tools, setTools] = useState<any[]>([]);
   const [showTools, setShowTools] = useState(false);
-  const [showModelPicker, setShowModelPicker] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -194,8 +200,6 @@ export function ChatPanel({ conversationId, initialMessage, initialModel }: Chat
   const copyToClipboard = async (text: string) => {
     await navigator.clipboard.writeText(text).catch(console.error);
   };
-
-  const selectedModelName = models.find((m) => m.id === selectedModel)?.name ?? selectedModel;
 
   return (
     <div className="flex-1 flex flex-col h-screen bg-background relative">
@@ -383,32 +387,37 @@ export function ChatPanel({ conversationId, initialMessage, initialModel }: Chat
                 </Button>
 
                 {/* Model picker */}
-                <div className="relative">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 gap-1 text-xs text-muted-foreground hover:text-primary px-2"
-                    onClick={() => { setShowModelPicker((p) => !p); setShowTools(false); }}
+                <Select
+                  value={selectedModel}
+                  disabled={models.length === 0}
+                  items={models.map((m) => ({ value: m.id, label: m.name }))}
+                  modal={false}
+                  onValueChange={(value) => {
+                    setSelectedModel(value || "");
+                    setShowTools(false);
+                  }}
+                  onOpenChange={(open) => {
+                    if (open) setShowTools(false);
+                  }}
+                >
+                  <SelectTrigger className="h-8 max-w-[180px] gap-1 border-none bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-primary focus-visible:border-primary/40 focus-visible:ring-2 focus-visible:ring-primary/20">
+                    <Cpu className="h-3.5 w-3.5 text-current" />
+                    <SelectValue placeholder="Model" className="max-w-[110px] truncate" />
+                  </SelectTrigger>
+                  <SelectContent
+                    side="bottom"
+                    align="start"
+                    sideOffset={8}
+                    alignItemWithTrigger={false}
+                    className="max-h-64 min-w-[18rem] max-w-[calc(100vw-2rem)] overscroll-contain"
                   >
-                    <Cpu className="w-3.5 h-3.5" />
-                    <span className="max-w-[100px] truncate">{selectedModelName || "Model"}</span>
-                    <ChevronDown className="w-3 h-3" />
-                  </Button>
-                  {showModelPicker && (
-                    <div className="absolute bottom-10 left-0 z-50 w-64 bg-background border rounded-xl shadow-xl p-1 max-h-60 overflow-y-auto">
-                      {models.map((m) => (
-                        <button
-                          key={m.id}
-                          className={`w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-muted transition-colors ${selectedModel === m.id ? "bg-primary/10 text-primary font-medium" : ""}`}
-                          onClick={() => { setSelectedModel(m.id); setShowModelPicker(false); }}
-                        >
-                          {m.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                    {models.map((m) => (
+                      <SelectItem key={m.id} value={m.id} className="text-xs">
+                        {m.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
                 {/* Tools panel */}
                 <div className="relative">
@@ -417,7 +426,7 @@ export function ChatPanel({ conversationId, initialMessage, initialModel }: Chat
                     variant="ghost"
                     size="sm"
                     className="h-8 gap-1 text-xs text-muted-foreground hover:text-primary px-2"
-                    onClick={() => { setShowTools((p) => !p); setShowModelPicker(false); }}
+                    onClick={() => setShowTools((p) => !p)}
                   >
                     <Wrench className="w-3.5 h-3.5" />
                     <span>Tools ({tools.length})</span>

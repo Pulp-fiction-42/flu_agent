@@ -2,8 +2,15 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
-import { Dna, Zap, Paperclip, Cpu, ChevronDown, X, Loader2 } from "lucide-react";
+import { Dna, Zap, Paperclip, Cpu, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { getToken } from "@/lib/auth";
 import { getModels, uploadFiles } from "@/lib/api";
 import { useFiles } from "@/components/file-context";
@@ -24,7 +31,6 @@ export default function AppPage() {
   // Model state
   const [models, setModels] = useState<any[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
-  const [showModelPicker, setShowModelPicker] = useState(false);
 
   // File upload
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -39,17 +45,6 @@ export default function AppPage() {
       })
       .catch((e) => console.error("Failed to load models", e));
   }, []);
-
-  // Close model picker when clicking outside
-  useEffect(() => {
-    if (!showModelPicker) return;
-    const handler = () => setShowModelPicker(false);
-    document.addEventListener("click", handler);
-    return () => document.removeEventListener("click", handler);
-  }, [showModelPicker]);
-
-  const selectedModelName =
-    models.find((m) => m.id === selectedModel)?.name ?? selectedModel;
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return;
@@ -182,48 +177,37 @@ export default function AppPage() {
               </Button>
 
               {/* 🧠 Model picker */}
-              <div className="relative" onClick={(e) => e.stopPropagation()}>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 gap-1 text-xs text-muted-foreground hover:text-primary px-2"
-                  onClick={() => setShowModelPicker((p) => !p)}
+              <Select
+                value={selectedModel}
+                disabled={models.length === 0}
+                items={models.map((m) => ({ value: m.id, label: m.name }))}
+                modal={false}
+                onValueChange={(value) => setSelectedModel(value || "")}
+              >
+                <SelectTrigger className="h-8 max-w-[200px] gap-1 border-none bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-primary focus-visible:border-primary/40 focus-visible:ring-2 focus-visible:ring-primary/20">
+                  <Cpu className="h-3.5 w-3.5 text-current" />
+                  <SelectValue placeholder="Model" className="max-w-[130px] truncate" />
+                </SelectTrigger>
+                <SelectContent
+                  side="top"
+                  align="start"
+                  sideOffset={10}
+                  alignItemWithTrigger={false}
+                  className="max-h-64 min-w-[18rem] max-w-[calc(100vw-2rem)] overscroll-contain"
                 >
-                  <Cpu className="w-3.5 h-3.5" />
-                  <span className="max-w-[120px] truncate">
-                    {selectedModelName || "Model"}
-                  </span>
-                  <ChevronDown className="w-3 h-3" />
-                </Button>
-
-                {showModelPicker && (
-                  <div className="absolute bottom-10 left-0 z-50 w-72 bg-background border rounded-xl shadow-xl p-1 max-h-60 overflow-y-auto">
-                    {models.length === 0 ? (
-                      <p className="text-xs text-muted-foreground px-3 py-2">
-                        暂无可用模型，请检查后端连接。
-                      </p>
-                    ) : (
-                      models.map((m) => (
-                        <button
-                          key={m.id}
-                          className={`w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-muted transition-colors ${
-                            selectedModel === m.id
-                              ? "bg-primary/10 text-primary font-medium"
-                              : ""
-                          }`}
-                          onClick={() => {
-                            setSelectedModel(m.id);
-                            setShowModelPicker(false);
-                          }}
-                        >
-                          {m.name}
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
+                  {models.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-muted-foreground">
+                      暂无可用模型，请检查后端连接。
+                    </div>
+                  ) : (
+                    models.map((m) => (
+                      <SelectItem key={m.id} value={m.id} className="text-xs">
+                        {m.name}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
 
               <div className="flex-1" />
 
