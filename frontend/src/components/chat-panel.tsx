@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 
 interface Message {
   role: "user" | "assistant";
@@ -420,31 +421,50 @@ export function ChatPanel({ conversationId, initialMessage, initialModel }: Chat
                 </Select>
 
                 {/* Tools panel */}
-                <div className="relative">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 gap-1 text-xs text-muted-foreground hover:text-primary px-2"
-                    onClick={() => setShowTools((p) => !p)}
+                <PopoverPrimitive.Root
+                  open={showTools}
+                  modal={false}
+                  onOpenChange={(open) => setShowTools(open)}
+                >
+                  <PopoverPrimitive.Trigger
+                    render={
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 gap-1 px-2 text-xs text-muted-foreground hover:text-primary"
+                      />
+                    }
                   >
                     <Wrench className="w-3.5 h-3.5" />
                     <span>Tools ({tools.length})</span>
-                  </Button>
-                  {showTools && (
-                    <div className="absolute bottom-10 left-0 z-50 w-64 bg-background border rounded-xl shadow-xl p-3 max-h-72 overflow-y-auto">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Agent Tools</p>
-                      <div className="space-y-0.5">
-                        {tools.map((t) => (
-                          <div key={t.name} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-muted">
-                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                            <span className="text-xs font-medium">{t.name}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                  </PopoverPrimitive.Trigger>
+                  <PopoverPrimitive.Portal>
+                    <PopoverPrimitive.Positioner
+                      side="top"
+                      align="start"
+                      sideOffset={10}
+                      className="z-50"
+                    >
+                      <PopoverPrimitive.Popup
+                        initialFocus={false}
+                        className="relative isolate z-50 max-h-72 w-64 max-w-[calc(100vw-2rem)] overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl bg-popover p-3 text-popover-foreground shadow-xl ring-1 ring-foreground/10 duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95"
+                      >
+                        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          Agent Tools
+                        </p>
+                        <div className="space-y-0.5">
+                          {tools.map((t) => (
+                            <div key={t.name} className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-muted">
+                              <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+                              <span className="text-xs font-medium">{t.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </PopoverPrimitive.Popup>
+                    </PopoverPrimitive.Positioner>
+                  </PopoverPrimitive.Portal>
+                </PopoverPrimitive.Root>
 
                 <div className="flex-1" />
 
