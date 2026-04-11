@@ -160,6 +160,151 @@ app.add_middleware(
 session_manager = get_session_manager()
 task_queue = get_task_queue()
 
+MODEL_CATALOG_TTL_SECONDS = max(int(os.environ.get("MODEL_CATALOG_TTL_SECONDS", "120")), 5)
+MODEL_CATALOG_PROBE_TIMEOUT_SECONDS = max(int(os.environ.get("MODEL_CATALOG_PROBE_TIMEOUT_SECONDS", "3")), 1)
+
+
+class ModelCatalogCache:
+    """内存中的模型目录快照，避免请求路径上做在线探测。"""
+
+    def __init__(self, ttl_seconds: int = 120, probe_timeout_seconds: int = 3):
+        self.ttl_seconds = ttl_seconds
+        self.probe_timeout_seconds = probe_timeout_seconds
+        self._lock = threading.Lock()
+        self._models: List[Dict[str, Any]] = []
+        self._provider_health: List[Dict[str, Any]] = []
+        self._last_refreshed_at: Optional[datetime.datetime] = None
+        self._last_refresh_started_at: Optional[datetime.datetime] = None
+        self._last_error: Optional[str] = None
+        self._refreshing = False
+        self._prime_from_config()
+
+    def _prime_from_config(self):
+        from core.provider_manager import build_model_catalog, load_providers
+
+        providers = load_providers()
+        models = build_model_catalog(providers)
+        provider_health = [
+            {
+                "provider": provider.name,
+                "type": provider.type,
+                "base_url": provider.base_url,
+                "auto_discover": provider.auto_discover,
+                "available": None,
+                "models": list(provider.models),
+                "configured_models": list(provider.models),
+                "model_count": len(provider.models),
+                "last_checked_at": None,
+            }
+            for provider in providers
+        ]
+
+        with self._lock:
+            self._models = models
+            self._provider_health = provider_health
+
+    def _utcnow(self) -> datetime.datetime:
+        return datetime.datetime.utcnow()
+
+    def _to_iso(self, value: Optional[datetime.datetime]) -> Optional[str]:
+        if value is None:
+            return None
+        return value.isoformat() + "Z"
+
+    def _is_stale_unlocked(self, now: Optional[datetime.datetime] = None) -> bool:
+        if self._last_refreshed_at is None:
+            return True
+        now = now or self._utcnow()
+        age = (now - self._last_refreshed_at).total_seconds()
+        return age >= self.ttl_seconds
+
+    def refresh_async(self, force: bool = False) -> bool:
+        with self._lock:
+            if self._refreshing:
+                return False
+            if not force and not self._is_stale_unlocked():
+                return False
+            self._refreshing = True
+            self._last_refresh_started_at = self._utcnow()
+
+        thread = threading.Thread(target=self._refresh_worker, daemon=True)
+        thread.start()
+        return True
+
+    def _refresh_worker(self):
+        try:
+            from core.provider_manager import build_model_catalog, collect_provider_health, load_providers
+
+            providers = load_providers()
+            health = collect_provider_health(
+                providers,
+                timeout=self.probe_timeout_seconds,
+            )
+            resolved_models = {
+                item["provider"]: item["models"]
+                for item in health
+                if item.get("models")
+            }
+            models = build_model_catalog(providers, resolved_models)
+            checked_at = self._utcnow()
+            provider_health = [
+                {
+                    **item,
+                    "model_count": len(item.get("models", [])),
+                    "last_checked_at": self._to_iso(checked_at),
+                }
+                for item in health
+            ]
+
+            with self._lock:
+                self._models = models
+                self._provider_health = provider_health
+                self._last_refreshed_at = checked_at
+                self._last_error = None
+        except Exception as exc:
+            with self._lock:
+                self._last_error = str(exc)
+        finally:
+            with self._lock:
+                self._refreshing = False
+
+    def get_models(self) -> List[Dict[str, Any]]:
+        self.refresh_async()
+        with self._lock:
+            return [dict(item) for item in self._models]
+
+    def get_status(self) -> Dict[str, Any]:
+        self.refresh_async()
+        with self._lock:
+            now = self._utcnow()
+            age_seconds = None
+            if self._last_refreshed_at is not None:
+                age_seconds = max(0.0, (now - self._last_refreshed_at).total_seconds())
+
+            return {
+                "ttl_seconds": self.ttl_seconds,
+                "probe_timeout_seconds": self.probe_timeout_seconds,
+                "refreshing": self._refreshing,
+                "stale": self._is_stale_unlocked(now),
+                "last_refresh_started_at": self._to_iso(self._last_refresh_started_at),
+                "last_refreshed_at": self._to_iso(self._last_refreshed_at),
+                "age_seconds": age_seconds,
+                "last_error": self._last_error,
+                "model_count": len(self._models),
+                "providers": [dict(item) for item in self._provider_health],
+            }
+
+
+model_catalog_cache = ModelCatalogCache(
+    ttl_seconds=MODEL_CATALOG_TTL_SECONDS,
+    probe_timeout_seconds=MODEL_CATALOG_PROBE_TIMEOUT_SECONDS,
+)
+
+
+@app.on_event("startup")
+async def warm_model_catalog_cache():
+    model_catalog_cache.refresh_async(force=True)
+
 # ==================== 对话持久化存储 ====================
 
 class ConversationStore:
@@ -365,17 +510,22 @@ async def health_check():
 
 @app.get("/api/models")
 async def get_models():
-    from core.provider_manager import detect_available_providers
-    providers = detect_available_providers()
-    models = []
-    for p in providers:
-        for m in p.resolved_models:
-            models.append({
-                "id": m,
-                "name": f"[{p.name}] {m}",
-                "provider": p.name
-            })
-    return models
+    return model_catalog_cache.get_models()
+
+
+@app.get("/api/models/health", dependencies=[Depends(get_current_user)])
+async def get_models_health():
+    return model_catalog_cache.get_status()
+
+
+@app.post("/api/models/refresh", dependencies=[Depends(get_current_user)])
+async def refresh_models_catalog():
+    started = model_catalog_cache.refresh_async(force=True)
+    status = model_catalog_cache.get_status()
+    return {
+        "refresh_started": started,
+        **status,
+    }
 
 
 @app.get("/api/tools", dependencies=[Depends(get_current_user)])

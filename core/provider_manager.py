@@ -7,7 +7,7 @@ import json
 import yaml
 import requests
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Tuple
+from typing import Any, List, Dict, Optional, Tuple
 
 
 @dataclass
@@ -21,6 +21,20 @@ class Provider:
     auto_discover: bool = False
     available: bool = False  # 运行时检测结果
     resolved_models: List[str] = field(default_factory=list)  # 检测后实际可用模型
+
+
+def merge_models(primary: Optional[List[str]] = None, secondary: Optional[List[str]] = None) -> List[str]:
+    """合并模型列表并去重，优先保留 primary 中的顺序。"""
+    merged: List[str] = []
+    seen = set()
+
+    for source in (primary or [], secondary or []):
+        for model in source:
+            if model and model not in seen:
+                merged.append(model)
+                seen.add(model)
+
+    return merged
 
 
 def load_providers(config_path: str = None) -> List[Provider]:
@@ -77,6 +91,35 @@ def discover_openai_models(base_url: str, api_key: str = "", timeout: int = 10) 
         return []
 
 
+def build_model_catalog(
+    providers: List[Provider] = None,
+    resolved_models_by_provider: Optional[Dict[str, List[str]]] = None,
+) -> List[Dict[str, str]]:
+    """
+    构建供 Web UI 使用的模型列表，不做在线探测。
+    resolved_models_by_provider 可注入最近一次探测到的模型快照。
+    """
+    if providers is None:
+        providers = load_providers()
+
+    resolved_models_by_provider = resolved_models_by_provider or {}
+    catalog: List[Dict[str, str]] = []
+
+    for provider in providers:
+        models = merge_models(
+            resolved_models_by_provider.get(provider.name),
+            provider.models,
+        )
+        for model in models:
+            catalog.append({
+                "id": model,
+                "name": f"[{provider.name}] {model}",
+                "provider": provider.name,
+            })
+
+    return catalog
+
+
 def probe_provider(provider: Provider, timeout: int = 10) -> Tuple[bool, List[str]]:
     """
     检测供应商是否可用，返回 (是否可用, 模型列表)
@@ -87,21 +130,10 @@ def probe_provider(provider: Provider, timeout: int = 10) -> Tuple[bool, List[st
     if provider.auto_discover:
         if provider.type == "ollama":
             discovered = discover_ollama_models(provider.base_url, timeout)
-            if discovered:
-                # 合并去重：自动发现的在前面
-                seen = set(models)
-                for m in discovered:
-                    if m not in seen:
-                        models.insert(0, m)
-                        seen.add(m)
+            models = merge_models(discovered, models)
         else:
             discovered = discover_openai_models(provider.base_url, provider.api_key, timeout)
-            if discovered:
-                seen = set(models)
-                for m in discovered:
-                    if m not in seen:
-                        models.insert(0, m)
-                        seen.add(m)
+            models = merge_models(discovered, models)
 
     if not models:
         return False, []
@@ -174,6 +206,32 @@ def detect_available_providers(providers: List[Provider] = None) -> List[Provide
     print(f"\n共 {len(available)}/{len(providers)} 个供应商可用")
 
     return available
+
+
+def collect_provider_health(providers: List[Provider] = None, timeout: int = 10) -> List[Dict[str, Any]]:
+    """
+    收集所有 provider 的健康状态与模型列表。
+    不过滤不可用 provider，供缓存层和运维接口使用。
+    """
+    if providers is None:
+        providers = load_providers()
+
+    health: List[Dict[str, Any]] = []
+    for provider in providers:
+        ok, models = probe_provider(provider, timeout=timeout)
+        provider.available = ok
+        provider.resolved_models = models
+        health.append({
+            "provider": provider.name,
+            "type": provider.type,
+            "base_url": provider.base_url,
+            "auto_discover": provider.auto_discover,
+            "available": ok,
+            "models": models,
+            "configured_models": list(provider.models),
+        })
+
+    return health
 
 
 def user_select_model(providers: List[Provider]) -> Optional[Dict]:
